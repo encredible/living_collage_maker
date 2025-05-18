@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QLineEdit, QScrollArea, QPushButton,
-                             QComboBox, QGridLayout, QTableView, QFrame)
+                             QComboBox, QGridLayout, QTableView, QFrame, QListWidget, QListWidgetItem)
 from PyQt6.QtCore import Qt, QSize, QMimeData, pyqtSignal, QAbstractTableModel, QModelIndex, QThread, pyqtSlot
 from PyQt6.QtGui import QPixmap, QDrag, QStandardItemModel, QStandardItem, QPainter, QPen, QColor
 from models.furniture import Furniture
@@ -303,6 +303,145 @@ class SelectedFurnitureTableModel(QStandardItemModel):
     def clear_furniture(self):
         self.removeRows(0, self.rowCount())
         self.furniture_items.clear()
+
+class SelectedFurniturePanel(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_ui()
+        
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # 제목
+        title = QLabel("선택된 가구")
+        title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        layout.addWidget(title)
+        
+        # 가구 목록 테이블
+        self.furniture_table = QTableView()
+        self.furniture_table.setStyleSheet("""
+            QTableView {
+                background-color: white;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+            }
+            QTableView::item {
+                padding: 8px;
+                border-bottom: 1px solid #eee;
+            }
+            QHeaderView::section {
+                background-color: #f8f9fa;
+                padding: 8px;
+                border: none;
+                border-bottom: 1px solid #ddd;
+                font-weight: bold;
+            }
+        """)
+        
+        # 테이블 모델 설정
+        self.model = QStandardItemModel()
+        self.model.setHorizontalHeaderLabels([
+            "브랜드", "이름", "가격", "타입", "색상", "크기", 
+            "좌석 높이", "위치", "스타일", "설명", "링크", "작성자", "작성일"
+        ])
+        self.furniture_table.setModel(self.model)
+        
+        # 테이블 설정
+        self.furniture_table.horizontalHeader().setStretchLastSection(True)
+        self.furniture_table.verticalHeader().setVisible(False)
+        self.furniture_table.setShowGrid(False)
+        self.furniture_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self.furniture_table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
+        self.furniture_table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
+        
+        # 더블 클릭 이벤트 연결
+        self.furniture_table.doubleClicked.connect(self.on_double_click)
+        
+        # 컬럼 너비 설정
+        self.furniture_table.setColumnWidth(0, 100)  # 브랜드
+        self.furniture_table.setColumnWidth(1, 150)  # 이름
+        self.furniture_table.setColumnWidth(2, 100)  # 가격
+        self.furniture_table.setColumnWidth(3, 100)  # 타입
+        self.furniture_table.setColumnWidth(4, 80)   # 색상
+        self.furniture_table.setColumnWidth(5, 120)  # 크기
+        self.furniture_table.setColumnWidth(6, 80)   # 좌석 높이
+        self.furniture_table.setColumnWidth(7, 100)  # 위치
+        self.furniture_table.setColumnWidth(8, 100)  # 스타일
+        self.furniture_table.setColumnWidth(9, 200)  # 설명
+        self.furniture_table.setColumnWidth(10, 150) # 링크
+        self.furniture_table.setColumnWidth(11, 100) # 작성자
+        self.furniture_table.setColumnWidth(12, 150) # 작성일
+        
+        layout.addWidget(self.furniture_table)
+        
+        # 하단 정보 패널
+        info_panel = QFrame()
+        info_panel.setStyleSheet("""
+            QFrame {
+                background-color: #f8f9fa;
+                border-top: 1px solid #ddd;
+                padding: 10px;
+            }
+        """)
+        info_layout = QHBoxLayout(info_panel)
+        
+        # 총 가격
+        self.total_price_label = QLabel("총 가격: 0원")
+        self.total_price_label.setStyleSheet("font-size: 14px; color: #666;")
+        info_layout.addWidget(self.total_price_label)
+        
+        # 선택된 가구 수
+        self.count_label = QLabel("선택된 가구: 0개")
+        self.count_label.setStyleSheet("font-size: 14px; color: #666;")
+        info_layout.addWidget(self.count_label)
+        
+        layout.addWidget(info_panel)
+        
+    def on_double_click(self, index):
+        """테이블 셀 더블 클릭 이벤트 처리"""
+        if index.column() == 10:  # 링크 컬럼
+            link = self.model.item(index.row(), 10).text()
+            if link != "미지정":
+                import webbrowser
+                webbrowser.open(link)
+        
+    def update_furniture_list(self, furniture_items):
+        self.model.removeRows(0, self.model.rowCount())
+        total_price = 0
+        
+        for item in furniture_items:
+            furniture = item.furniture
+            total_price += furniture.price
+            
+            row = [
+                QStandardItem(furniture.brand),
+                QStandardItem(furniture.name),
+                QStandardItem(f"{furniture.price:,}원"),
+                QStandardItem(furniture.type),
+                QStandardItem(furniture.color or "미지정"),
+                QStandardItem(f"{furniture.width}x{furniture.depth}x{furniture.height}mm"),
+                QStandardItem(str(furniture.seat_height) + "mm" if furniture.seat_height else "미지정"),
+                QStandardItem(", ".join(furniture.locations) if furniture.locations else "미지정"),
+                QStandardItem(", ".join(furniture.styles) if furniture.styles else "미지정"),
+                QStandardItem(furniture.description or "미지정"),
+                QStandardItem(furniture.link or "미지정"),
+                QStandardItem(furniture.author or "미지정"),
+                QStandardItem(furniture.created_at or "미지정")
+            ]
+            
+            # 링크 셀에 커서 변경 및 스타일 적용
+            if furniture.link:
+                row[10].setData(Qt.CursorShape.PointingHandCursor, Qt.ItemDataRole.UserRole)
+                row[10].setData("color: blue; text-decoration: underline;", Qt.ItemDataRole.UserRole + 1)
+            
+            self.model.appendRow(row)
+        
+        self.total_price_label.setText(f"총 가격: {total_price:,}원")
+        self.count_label.setText(f"선택된 가구: {len(furniture_items)}개")
+        
+        # 테이블 크기 조정
+        self.furniture_table.resizeColumnsToContents()
+        self.furniture_table.resizeRowsToContents()
 
 class ExplorerPanel(QWidget):
     furniture_selected = pyqtSignal(Furniture)
@@ -619,7 +758,7 @@ class ExplorerPanel(QWidget):
 class BottomPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setObjectName("bottom_panel")  # 이름 추가
+        self.setObjectName("bottom_panel")
         self.setup_ui()
         print("[하단패널] 초기화 완료")
     
@@ -627,69 +766,12 @@ class BottomPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         
-        # 선택된 가구 목록 테이블
-        self.selected_model = SelectedFurnitureTableModel()
-        self.selected_table = QTableView()
-        self.selected_table.setModel(self.selected_model)
-        self.selected_table.setStyleSheet("""
-            QTableView {
-                border: none;
-                background-color: white;
-            }
-            QTableView::item {
-                border-bottom: 1px solid #eee;
-                padding: 5px;
-            }
-        """)
-        self.selected_table.horizontalHeader().setStretchLastSection(True)
-        self.selected_table.verticalHeader().setVisible(False)
-        self.selected_table.setShowGrid(False)
-        layout.addWidget(self.selected_table)
-        
-        # 하단 정보 패널
-        info_panel = QFrame()
-        info_panel.setStyleSheet("""
-            QFrame {
-                background-color: #f8f9fa;
-                border-top: 1px solid #ddd;
-            }
-        """)
-        info_layout = QHBoxLayout(info_panel)
-        info_layout.setContentsMargins(10, 10, 10, 10)
-        
-        # 선택된 가구 목록
-        self.selected_items_label = QLabel("선택된 가구: 0개")
-        self.selected_items_label.setStyleSheet("font-size: 14px; color: #2C3E50;")
-        info_layout.addWidget(self.selected_items_label)
-        
-        # 총 가격
-        self.total_price_label = QLabel("총 가격: ₩0")
-        self.total_price_label.setStyleSheet("""
-            QLabel {
-                font-size: 16px;
-                color: #2C3E50;
-                font-weight: bold;
-            }
-        """)
-        info_layout.addWidget(self.total_price_label)
-        
-        layout.addWidget(info_panel)
+        # 선택된 가구 패널
+        self.selected_panel = SelectedFurniturePanel()
+        layout.addWidget(self.selected_panel)
     
     def update_panel(self, items):
         """하단 패널을 업데이트합니다."""
         print(f"[하단패널] 업데이트 시작, 아이템 수: {len(items)}")
-        self.selected_model.clear_furniture()
-        total_price = 0
-        
-        for item in items:
-            print(f"[하단패널] 가구 추가: {item.furniture.name}")
-            self.selected_model.add_furniture(item.furniture)
-            total_price += item.furniture.price
-        
-        self.selected_items_label.setText(f"선택된 가구: {len(items)}개")
-        self.total_price_label.setText(f"총 가격: ₩{total_price:,}")
-        
-        # 테이블 크기 조정
-        self.selected_table.resizeColumnsToContents()
-        self.selected_table.resizeRowsToContents()
-        print(f"[하단패널] 업데이트 완료, 총 가격: ₩{total_price:,}") 
+        self.selected_panel.update_furniture_list(items)
+        print("[하단패널] 업데이트 완료") 
