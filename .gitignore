@@ -1,0 +1,5 @@
+.idea
+src/.image
+dist
+build
+.env
