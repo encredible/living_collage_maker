@@ -20,7 +20,6 @@ a = Analysis(
         'supabase',
         'dotenv',
         'PIL',
-        'PIL._tkinter',
         'ui',
         'ui.canvas',
         'ui.panels',
@@ -86,8 +85,8 @@ exe = EXE(
     runtime_tmpdir=None,
     console=True,  # 디버깅을 위해 콘솔 창 표시
     disable_windowed_traceback=False,
-    argv_emulation=True,
-    target_arch='arm64',
+    argv_emulation=False,  # Windows에서는 argv_emulation을 비활성화
+    target_arch=None,  # 자동 감지하도록 설정
     codesign_identity=None,
     entitlements_file=None,
 )

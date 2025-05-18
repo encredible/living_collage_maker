@@ -1,11 +1,31 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QLineEdit, QScrollArea, QPushButton,
                              QComboBox, QGridLayout, QTableView, QFrame)
-from PyQt6.QtCore import Qt, QSize, QMimeData, pyqtSignal, QAbstractTableModel, QModelIndex
+from PyQt6.QtCore import Qt, QSize, QMimeData, pyqtSignal, QAbstractTableModel, QModelIndex, QThread, pyqtSlot
 from PyQt6.QtGui import QPixmap, QDrag, QStandardItemModel, QStandardItem, QPainter, QPen, QColor
 from models.furniture import Furniture
 from services.image_service import ImageService
 from services.supabase_client import SupabaseClient
+import threading
+from concurrent.futures import ThreadPoolExecutor
+import weakref  # Python 내장 weakref 모듈 사용
+
+class ImageLoaderThread(QThread):
+    image_loaded = pyqtSignal(str, QPixmap)
+    
+    def __init__(self, image_service, supabase, furniture):
+        super().__init__()
+        self.image_service = image_service
+        self.supabase = supabase
+        self.furniture = furniture
+    
+    def run(self):
+        try:
+            image_data = self.supabase.get_furniture_image(self.furniture.image_filename)
+            pixmap = self.image_service.download_and_cache_image(image_data, self.furniture.image_filename)
+            self.image_loaded.emit(self.furniture.image_filename, pixmap)
+        except Exception as e:
+            print(f"이미지 로드 중 오류 발생: {e}")
 
 class FurnitureItem(QWidget):
     def __init__(self, furniture: Furniture, parent=None):
@@ -150,7 +170,9 @@ class FurnitureTableModel(QStandardItemModel):
         self.furniture_items = []
         self.image_service = ImageService()
         self.supabase = SupabaseClient()
-        self.thumbnail_cache = {}
+        self.thumbnail_cache = weakref.WeakValueDictionary()  # 약한 참조를 사용한 썸네일 캐시
+        self.loading_threads = {}  # 로딩 중인 스레드 추적
+        self._cleanup_timer = None
     
     def mimeTypes(self):
         return ["application/x-furniture"]
@@ -189,66 +211,80 @@ class FurnitureTableModel(QStandardItemModel):
     def add_furniture(self, furniture: Furniture):
         # 썸네일 아이템
         thumbnail_item = QStandardItem()
-        thumbnail = self.get_thumbnail(furniture)
-        thumbnail_item.setData(thumbnail, Qt.ItemDataRole.DecorationRole)
         thumbnail_item.setEditable(False)
-        thumbnail_item.setData(furniture, Qt.ItemDataRole.UserRole)  # 가구 데이터 저장
+        thumbnail_item.setData(furniture, Qt.ItemDataRole.UserRole)
         
         # 브랜드 아이템
         brand_item = QStandardItem(furniture.brand)
         brand_item.setEditable(False)
-        brand_item.setData(furniture, Qt.ItemDataRole.UserRole)  # 가구 데이터 저장
+        brand_item.setData(furniture, Qt.ItemDataRole.UserRole)
         
         # 이름 아이템
         name_item = QStandardItem(furniture.name)
         name_item.setEditable(False)
-        name_item.setData(furniture, Qt.ItemDataRole.UserRole)  # 가구 데이터 저장
+        name_item.setData(furniture, Qt.ItemDataRole.UserRole)
         
         # 가격 아이템
         price_item = QStandardItem(f"₩{furniture.price:,}")
         price_item.setEditable(False)
-        price_item.setData(furniture, Qt.ItemDataRole.UserRole)  # 가구 데이터 저장
+        price_item.setData(furniture, Qt.ItemDataRole.UserRole)
         
         # 행 추가
         self.appendRow([thumbnail_item, brand_item, name_item, price_item])
         self.furniture_items.append(furniture)
-    
-    def get_thumbnail(self, furniture: Furniture):
-        """가구의 썸네일 이미지를 가져옵니다."""
-        # 캐시된 썸네일이 있는지 확인
-        if furniture.image_filename in self.thumbnail_cache:
-            return self.thumbnail_cache[furniture.image_filename]
         
-        try:
-            # Supabase에서 이미지 다운로드
-            image_data = self.supabase.get_furniture_image(furniture.image_filename)
-            
-            # 이미지 캐시 및 썸네일 생성
-            pixmap = self.image_service.download_and_cache_image(
-                image_data, 
-                furniture.image_filename
-            )
+        # 이미지 비동기 로딩 시작
+        self.load_thumbnail_async(furniture, thumbnail_item)
+    
+    def load_thumbnail_async(self, furniture: Furniture, item: QStandardItem):
+        """썸네일을 비동기적으로 로드합니다."""
+        # 이미 로딩 중인 스레드가 있다면 중단
+        if furniture.image_filename in self.loading_threads:
+            try:
+                self.loading_threads[furniture.image_filename].terminate()
+                self.loading_threads[furniture.image_filename].wait()
+            except:
+                pass
+        
+        # 새 스레드 생성 및 시작
+        thread = ImageLoaderThread(self.image_service, self.supabase, furniture)
+        thread.image_loaded.connect(lambda filename, pixmap: self.on_image_loaded(filename, pixmap, item))
+        self.loading_threads[furniture.image_filename] = thread
+        thread.start()
+    
+    @pyqtSlot(str, QPixmap, QStandardItem)
+    def on_image_loaded(self, filename: str, pixmap: QPixmap, item: QStandardItem):
+        """이미지 로딩이 완료되면 호출됩니다."""
+        if not pixmap.isNull():
             thumbnail = self.image_service.create_thumbnail(pixmap, QSize(100, 100))
-            
-            # 썸네일 캐시에 저장
-            self.thumbnail_cache[furniture.image_filename] = thumbnail
-            
-            return thumbnail
-        except Exception as e:
-            print(f"썸네일 생성 중 오류 발생: {e}")
-            # 에러 이미지 생성
-            error_pixmap = QPixmap(100, 100)
-            error_pixmap.fill(QColor("#f0f0f0"))
-            painter = QPainter(error_pixmap)
-            painter.setPen(QPen(QColor("#2C3E50")))
-            painter.drawText(error_pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "이미지 로드 실패")
-            painter.end()
-            return error_pixmap
+            item.setData(thumbnail, Qt.ItemDataRole.DecorationRole)
+            self.thumbnail_cache[filename] = thumbnail
+        
+        # 스레드 정리
+        if filename in self.loading_threads:
+            try:
+                self.loading_threads[filename].wait()
+                del self.loading_threads[filename]
+            except:
+                pass
     
     def clear_furniture(self):
+        # 로딩 중인 스레드 중단
+        for thread in self.loading_threads.values():
+            try:
+                thread.terminate()
+                thread.wait()
+            except:
+                pass
+        self.loading_threads.clear()
+        
         self.removeRows(0, self.rowCount())
         self.furniture_items.clear()
-        self.thumbnail_cache.clear()  # 캐시 초기화
+        self.thumbnail_cache.clear()
+    
+    def __del__(self):
+        """모델이 삭제될 때 리소스 정리"""
+        self.clear_furniture()
 
 class SelectedFurnitureTableModel(QStandardItemModel):
     def __init__(self):
@@ -426,10 +462,11 @@ class ExplorerPanel(QWidget):
         try:
             print("가구 데이터 로딩 시작...")
             
-            # Supabase에서 가구 데이터 조회
-            response = self.supabase.client.table('furniture').select('*').execute()
+            # Supabase에서 가구 데이터 조회 (모든 필드 선택)
+            response = self.supabase.client.table('furniture').select(
+                'id,name,brand,type,price,image_filename,description,link,color,locations,styles,width,depth,height,seat_height,author,created_at'
+            ).execute()
             
-            print(f"Supabase 응답: {response}")
             print(f"데이터 개수: {len(response.data) if response.data else 0}")
             
             if response.data:
@@ -445,8 +482,8 @@ class ExplorerPanel(QWidget):
                 # 데이터 추가
                 for item in response.data:
                     try:
-                        print(f"가구 데이터 처리 중: {item.get('name', 'Unknown')}")
-                        furniture = Furniture(**item)
+                        # Furniture 객체 생성
+                        furniture = Furniture.from_dict(item)
                         self.furniture_model.add_furniture(furniture)
                         
                         # 필터 옵션 업데이트
@@ -454,21 +491,27 @@ class ExplorerPanel(QWidget):
                             self.brand_filter.addItem(furniture.brand)
                         if furniture.type and furniture.type not in [self.type_filter.itemText(i) for i in range(1, self.type_filter.count())]:
                             self.type_filter.addItem(furniture.type)
+                            
                     except Exception as e:
-                        print(f"개별 가구 데이터 처리 중 오류 발생: {e}")
+                        print(f"개별 가구 데이터 처리 중 오류 발생: {str(e)}")
+                        print(f"문제가 된 데이터: {item}")
+                        import traceback
+                        print(traceback.format_exc())
                         continue
-                
-                # 테이블 크기 조정
-                self.furniture_table.resizeColumnsToContents()
-                self.furniture_table.resizeRowsToContents()
                 
                 print(f"총 {self.furniture_model.rowCount()}개의 가구 데이터가 로드되었습니다.")
             else:
                 print("가구 데이터가 없습니다.")
             
         except Exception as e:
-            print(f"가구 데이터 로드 중 오류 발생: {e}")
-            # TODO: 사용자에게 오류 메시지 표시
+            print(f"가구 데이터 로드 중 오류 발생: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+    
+    def __del__(self):
+        """패널이 삭제될 때 로딩 중인 스레드 정리"""
+        if hasattr(self, 'furniture_model'):
+            self.furniture_model.clear_furniture()
     
     def create_new_collage(self):
         """새 콜라주를 생성합니다."""
