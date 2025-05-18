@@ -514,52 +514,101 @@ class ExplorerPanel(QWidget):
             }
         """)
         self.search_input.textChanged.connect(self.filter_furniture)
-        filter_layout.addWidget(self.search_input, 0, 0, 1, 2)
+        filter_layout.addWidget(self.search_input, 0, 0, 1, 3)
         
-        # 브랜드 필터
-        self.brand_filter = QComboBox()
-        self.brand_filter.addItem("전체 브랜드")
-        self.brand_filter.setStyleSheet("""
+        # 필터 스타일
+        filter_style = """
             QComboBox {
                 padding: 6px;
                 border: 1px solid #ddd;
                 border-radius: 4px;
                 font-size: 14px;
             }
-        """)
+            QLabel {
+                font-size: 14px;
+                color: #666;
+            }
+        """
+        
+        # 첫 번째 행: 브랜드, 타입, 가격
+        self.brand_filter = QComboBox()
+        self.brand_filter.addItem("전체 브랜드")
+        self.brand_filter.setStyleSheet(filter_style)
         self.brand_filter.currentTextChanged.connect(self.filter_furniture)
         filter_layout.addWidget(QLabel("브랜드:"), 1, 0)
         filter_layout.addWidget(self.brand_filter, 1, 1)
         
-        # 타입 필터
         self.type_filter = QComboBox()
         self.type_filter.addItem("전체 타입")
-        self.type_filter.setStyleSheet("""
-            QComboBox {
-                padding: 6px;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                font-size: 14px;
-            }
-        """)
+        self.type_filter.setStyleSheet(filter_style)
         self.type_filter.currentTextChanged.connect(self.filter_furniture)
-        filter_layout.addWidget(QLabel("타입:"), 2, 0)
-        filter_layout.addWidget(self.type_filter, 2, 1)
+        filter_layout.addWidget(QLabel("타입:"), 1, 2)
+        filter_layout.addWidget(self.type_filter, 1, 3)
         
-        # 가격 범위 필터
-        self.price_filter = QComboBox()
-        self.price_filter.addItems(["전체 가격", "~10만원", "10만원~30만원", "30만원~50만원", "50만원~"])
-        self.price_filter.setStyleSheet("""
-            QComboBox {
+        # 가격 필터를 QLineEdit 두 개로 변경
+        price_filter_layout = QHBoxLayout()
+        price_filter_layout.setSpacing(5)
+        
+        self.min_price_input = QLineEdit()
+        self.min_price_input.setPlaceholderText("최소 가격")
+        self.min_price_input.setStyleSheet("""
+            QLineEdit {
                 padding: 6px;
                 border: 1px solid #ddd;
                 border-radius: 4px;
                 font-size: 14px;
+                width: 80px;
             }
         """)
-        self.price_filter.currentTextChanged.connect(self.filter_furniture)
-        filter_layout.addWidget(QLabel("가격:"), 3, 0)
-        filter_layout.addWidget(self.price_filter, 3, 1)
+        self.min_price_input.textChanged.connect(self.filter_furniture)
+        
+        price_label = QLabel("~")
+        price_label.setStyleSheet("font-size: 14px; color: #666;")
+        
+        self.max_price_input = QLineEdit()
+        self.max_price_input.setPlaceholderText("최대 가격")
+        self.max_price_input.setStyleSheet("""
+            QLineEdit {
+                padding: 6px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 14px;
+                width: 80px;
+            }
+        """)
+        self.max_price_input.textChanged.connect(self.filter_furniture)
+        
+        price_filter_layout.addWidget(self.min_price_input)
+        price_filter_layout.addWidget(price_label)
+        price_filter_layout.addWidget(self.max_price_input)
+        
+        price_widget = QWidget()
+        price_widget.setLayout(price_filter_layout)
+        
+        filter_layout.addWidget(QLabel("가격:"), 1, 4)
+        filter_layout.addWidget(price_widget, 1, 5)
+        
+        # 두 번째 행: 색상, 위치, 스타일
+        self.color_filter = QComboBox()
+        self.color_filter.addItem("전체 색상")
+        self.color_filter.setStyleSheet(filter_style)
+        self.color_filter.currentTextChanged.connect(self.filter_furniture)
+        filter_layout.addWidget(QLabel("색상:"), 2, 0)
+        filter_layout.addWidget(self.color_filter, 2, 1)
+        
+        self.location_filter = QComboBox()
+        self.location_filter.addItem("전체 위치")
+        self.location_filter.setStyleSheet(filter_style)
+        self.location_filter.currentTextChanged.connect(self.filter_furniture)
+        filter_layout.addWidget(QLabel("위치:"), 2, 2)
+        filter_layout.addWidget(self.location_filter, 2, 3)
+        
+        self.style_filter = QComboBox()
+        self.style_filter.addItem("전체 스타일")
+        self.style_filter.setStyleSheet(filter_style)
+        self.style_filter.currentTextChanged.connect(self.filter_furniture)
+        filter_layout.addWidget(QLabel("스타일:"), 2, 4)
+        filter_layout.addWidget(self.style_filter, 2, 5)
         
         layout.addLayout(filter_layout)
         
@@ -582,8 +631,8 @@ class ExplorerPanel(QWidget):
         self.furniture_table.setShowGrid(False)
         self.furniture_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.furniture_table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
-        self.furniture_table.setDragEnabled(True)  # 드래그 활성화
-        self.furniture_table.setDragDropMode(QTableView.DragDropMode.DragOnly)  # 드래그만 허용
+        self.furniture_table.setDragEnabled(True)
+        self.furniture_table.setDragDropMode(QTableView.DragDropMode.DragOnly)
         
         # 컬럼 크기 설정
         self.furniture_table.setColumnWidth(0, 100)  # 썸네일 컬럼
@@ -617,6 +666,12 @@ class ExplorerPanel(QWidget):
                 self.brand_filter.addItem("전체 브랜드")
                 self.type_filter.clear()
                 self.type_filter.addItem("전체 타입")
+                self.color_filter.clear()
+                self.color_filter.addItem("전체 색상")
+                self.location_filter.clear()
+                self.location_filter.addItem("전체 위치")
+                self.style_filter.clear()
+                self.style_filter.addItem("전체 스타일")
                 
                 # 데이터 추가
                 for item in response.data:
@@ -630,6 +685,14 @@ class ExplorerPanel(QWidget):
                             self.brand_filter.addItem(furniture.brand)
                         if furniture.type and furniture.type not in [self.type_filter.itemText(i) for i in range(1, self.type_filter.count())]:
                             self.type_filter.addItem(furniture.type)
+                        if furniture.color and furniture.color not in [self.color_filter.itemText(i) for i in range(1, self.color_filter.count())]:
+                            self.color_filter.addItem(furniture.color)
+                        for location in furniture.locations:
+                            if location not in [self.location_filter.itemText(i) for i in range(1, self.location_filter.count())]:
+                                self.location_filter.addItem(location)
+                        for style in furniture.styles:
+                            if style not in [self.style_filter.itemText(i) for i in range(1, self.style_filter.count())]:
+                                self.style_filter.addItem(style)
                             
                     except Exception as e:
                         print(f"개별 가구 데이터 처리 중 오류 발생: {str(e)}")
@@ -679,7 +742,13 @@ class ExplorerPanel(QWidget):
         search_text = self.search_input.text().lower()
         selected_brand = self.brand_filter.currentText()
         selected_type = self.type_filter.currentText()
-        selected_price = self.price_filter.currentText()
+        selected_color = self.color_filter.currentText()
+        selected_location = self.location_filter.currentText()
+        selected_style = self.style_filter.currentText()
+        
+        # 가격 필터 값 가져오기
+        min_price = self.min_price_input.text().strip()
+        max_price = self.max_price_input.text().strip()
         
         for row in range(self.furniture_model.rowCount()):
             furniture = self.furniture_model.furniture_items[row]
@@ -701,16 +770,33 @@ class ExplorerPanel(QWidget):
                 show_item = False
             
             # 가격 필터링
-            if selected_price != "전체 가격":
-                price = furniture.price
-                if selected_price == "~10만원" and price > 100000:
-                    show_item = False
-                elif selected_price == "10만원~30만원" and (price < 100000 or price > 300000):
-                    show_item = False
-                elif selected_price == "30만원~50만원" and (price < 300000 or price > 500000):
-                    show_item = False
-                elif selected_price == "50만원~" and price < 500000:
-                    show_item = False
+            price = furniture.price
+            if min_price:
+                try:
+                    min_val = int(min_price)
+                    if price < min_val:
+                        show_item = False
+                except ValueError:
+                    pass
+            if max_price:
+                try:
+                    max_val = int(max_price)
+                    if price > max_val:
+                        show_item = False
+                except ValueError:
+                    pass
+            
+            # 색상 필터링
+            if selected_color != "전체 색상" and furniture.color != selected_color:
+                show_item = False
+            
+            # 위치 필터링
+            if selected_location != "전체 위치" and selected_location not in furniture.locations:
+                show_item = False
+            
+            # 스타일 필터링
+            if selected_style != "전체 스타일" and selected_style not in furniture.styles:
+                show_item = False
             
             # 아이템 표시/숨김
             self.furniture_table.setRowHidden(row, not show_item)
