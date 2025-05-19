@@ -8,6 +8,8 @@ from ui.panels import ExplorerPanel, BottomPanel
 from services.image_service import ImageService
 from services.supabase_client import SupabaseClient
 import os
+import json
+import datetime
 
 class FurnitureItem(QWidget):
     def __init__(self, furniture: Furniture, parent=None):
@@ -24,6 +26,16 @@ class FurnitureItem(QWidget):
         self.is_resizing = False
         self.resize_handle = QRect(self.width() - 20, self.height() - 20, 20, 20)
         self.maintain_aspect_ratio = False  # 비율 유지 여부를 저장하는 변수 추가
+        self.is_flipped = False  # 좌우 반전 여부를 저장하는 변수 추가
+    
+    def update_resize_handle(self):
+        """크기가 변경될 때 리사이즈 핸들 위치를 업데이트합니다."""
+        self.resize_handle = QRect(self.width() - 20, self.height() - 20, 20, 20)
+    
+    def resizeEvent(self, event):
+        """위젯 크기가 변경될 때 리사이즈 핸들 위치를 자동으로 업데이트합니다."""
+        super().resizeEvent(event)
+        self.update_resize_handle()
     
     def load_image(self):
         """가구 이미지를 로드합니다."""
@@ -51,6 +63,7 @@ class FurnitureItem(QWidget):
             initial_width = 200
             initial_height = int(initial_width / self.original_ratio)
             self.setFixedSize(initial_width, initial_height)
+            self.update_resize_handle()
             
         except Exception as e:
             print(f"이미지 로드 중 오류 발생: {e}")
@@ -62,6 +75,7 @@ class FurnitureItem(QWidget):
             painter.drawText(self.pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "이미지 로드 실패")
             painter.end()
             self.setFixedSize(200, 200)
+            self.update_resize_handle()
     
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -119,7 +133,7 @@ class FurnitureItem(QWidget):
                 new_height = max(100, event.pos().y())
             
             self.setFixedSize(new_width, new_height)
-            self.resize_handle = QRect(new_width - 20, new_height - 20, 20, 20)
+            self.update_resize_handle()
         elif event.buttons() & Qt.MouseButton.LeftButton:
             # 드래그로 이동
             delta = event.pos() - self.old_pos
@@ -171,6 +185,7 @@ class FurnitureItem(QWidget):
             transform = QTransform()
             transform.scale(-1, 1)  # x축 방향으로 -1을 곱하여 좌우 반전
             self.pixmap = self.pixmap.transformed(transform)
+            self.is_flipped = not self.is_flipped  # 반전 상태 토글
             self.update()  # 위젯 다시 그리기
 
     def deleteLater(self):
@@ -212,6 +227,189 @@ class Canvas(QWidget):
         # 초기 상태 설정
         self.is_new_collage = True
         self.furniture_items = []
+        
+        # 우클릭 메뉴 활성화
+        self.canvas_area.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.canvas_area.customContextMenuRequested.connect(self.show_context_menu)
+    
+    def show_context_menu(self, position):
+        """캔버스 영역에서 우클릭했을 때 컨텍스트 메뉴를 표시합니다."""
+        menu = QMenu(self)
+        
+        # 메뉴 아이템 추가
+        save_action = menu.addAction("저장하기")
+        load_action = menu.addAction("불러오기")
+        menu.addSeparator()
+        new_action = menu.addAction("새 콜라주")
+        export_action = menu.addAction("내보내기")
+        
+        # 메뉴 아이템 동작 연결
+        save_action.triggered.connect(self.save_collage)
+        load_action.triggered.connect(self.load_collage)
+        new_action.triggered.connect(self.create_new_collage)
+        export_action.triggered.connect(self.export_collage)
+        
+        # 메뉴 표시
+        menu.exec(self.canvas_area.mapToGlobal(position))
+    
+    def save_collage(self):
+        """현재 콜라주를 JSON 파일로 저장합니다."""
+        if not self.furniture_items and self.is_new_collage:
+            QMessageBox.warning(self, "경고", "저장할 콜라주가 없습니다.")
+            return
+        
+        # 파일 저장 다이얼로그
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "콜라주 저장",
+            os.path.expanduser("~/Desktop/collage.json"),
+            "JSON 파일 (*.json);;모든 파일 (*.*)"
+        )
+        
+        if file_path:
+            try:
+                # 저장할 데이터 생성
+                collage_data = {
+                    "canvas": {
+                        "width": self.canvas_area.width(),
+                        "height": self.canvas_area.height(),
+                        "saved_at": datetime.datetime.now().isoformat(),
+                        "last_modified": datetime.datetime.now().isoformat()
+                    },
+                    "furniture_items": []
+                }
+                
+                # 가구 아이템 정보 수집
+                for i, item in enumerate(self.furniture_items):
+                    # 좌우 반전 여부 확인 (pixmap이 원본과 다른지 확인)
+                    is_flipped = hasattr(item, 'is_flipped') and item.is_flipped
+                    
+                    item_data = {
+                        "id": item.furniture.id,
+                        "position": {
+                            "x": item.pos().x(),
+                            "y": item.pos().y()
+                        },
+                        "size": {
+                            "width": item.width(),
+                            "height": item.height()
+                        },
+                        "z_order": i,  # 리스트 순서대로 z-order 저장
+                        "is_flipped": is_flipped
+                    }
+                    collage_data["furniture_items"].append(item_data)
+                
+                # JSON으로 저장
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(collage_data, f, ensure_ascii=False, indent=2)
+                
+                QMessageBox.information(self, "성공", "콜라주가 성공적으로 저장되었습니다.")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "오류", f"콜라주 저장 중 오류가 발생했습니다: {str(e)}")
+    
+    def load_collage(self):
+        """저장된 콜라주를 JSON 파일에서 불러옵니다."""
+        # 파일 열기 다이얼로그
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "콜라주 불러오기",
+            os.path.expanduser("~/Desktop"),
+            "JSON 파일 (*.json);;모든 파일 (*.*)"
+        )
+        
+        if file_path:
+            try:
+                # JSON 파일 로드
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    collage_data = json.load(f)
+                
+                # 기존 가구 아이템 제거
+                for item in self.furniture_items:
+                    item.deleteLater()
+                self.furniture_items.clear()
+                
+                # 캔버스 크기 설정
+                canvas_width = collage_data["canvas"]["width"]
+                canvas_height = collage_data["canvas"]["height"]
+                self.canvas_area.setFixedSize(canvas_width, canvas_height)
+                self.is_new_collage = False
+                
+                # 가구 아이템 불러오기
+                furniture_items_data = collage_data["furniture_items"]
+                
+                # Supabase 클라이언트 생성
+                supabase = SupabaseClient()
+                
+                # 모든 가구 데이터 가져오기
+                all_furniture = supabase.get_furniture_list()
+                
+                # 딕셔너리로 변환 (id를 키로 사용)
+                furniture_dict = {}
+                for furniture_data in all_furniture:
+                    furniture_dict[furniture_data["id"]] = furniture_data
+                
+                for item_data in sorted(furniture_items_data, key=lambda x: x["z_order"]):
+                    furniture_id = item_data["id"]
+                    
+                    # 가구 ID로 데이터베이스에서 가구 정보 검색
+                    if furniture_id in furniture_dict:
+                        # 딕셔너리 데이터로 Furniture 객체 생성
+                        furniture_data = furniture_dict[furniture_id]
+                        furniture = Furniture(**furniture_data)
+                        
+                        # 가구 아이템 생성
+                        item = FurnitureItem(furniture, self.canvas_area)
+                        
+                        # 위치와 크기 설정
+                        item.move(QPoint(item_data["position"]["x"], item_data["position"]["y"]))
+                        item.setFixedSize(item_data["size"]["width"], item_data["size"]["height"])
+                        
+                        # 좌우 반전 설정
+                        if item_data.get("is_flipped", False):
+                            transform = QTransform()
+                            transform.scale(-1, 1)  # x축 방향으로 -1을 곱하여 좌우 반전
+                            item.pixmap = item.pixmap.transformed(transform)
+                            item.is_flipped = True
+                            
+                        item.show()
+                        self.furniture_items.append(item)
+                    else:
+                        print(f"가구 ID를 찾을 수 없습니다: {furniture_id}")
+                
+                # 하단 패널 업데이트
+                self.update_bottom_panel()
+                
+                # 윈도우 크기 조정 (수정된 부분)
+                window = self.window()
+                if window:
+                    # 현재 윈도우 크기 가져오기
+                    current_width = window.width()
+                    current_height = window.height()
+                    
+                    # 기본 여백 설정
+                    right_panel_width = 400  # 우측 패널 너비
+                    top_margin = 100  # 상단 여유 공간
+                    
+                    # 캔버스 기반 최소 크기 계산
+                    canvas_based_width = canvas_width + right_panel_width
+                    canvas_based_height = canvas_height + top_margin
+                    
+                    # 최소 윈도우 크기 계산 (현재 크기와 캔버스 기반 크기 중 더 큰 값 사용)
+                    # 단, 기본 최소 크기(1200, 800)보다는 작아지지 않도록 설정
+                    new_width = max(1200, current_width, canvas_based_width)
+                    new_height = max(800, current_height, canvas_based_height)
+                    
+                    # 윈도우 크기 조정
+                    window.setMinimumSize(new_width, new_height)
+                    window.resize(new_width, new_height)
+                
+                QMessageBox.information(self, "성공", "콜라주가 성공적으로 불러와졌습니다.")
+                
+            except Exception as e:
+                import traceback
+                traceback.print_exc()  # 자세한 오류 정보 출력
+                QMessageBox.critical(self, "오류", f"콜라주 불러오기 중 오류가 발생했습니다: {str(e)}")
     
     def create_new_collage(self):
         """새 콜라주를 생성합니다."""
@@ -228,20 +426,29 @@ class Canvas(QWidget):
             self.canvas_area.setFixedSize(width, height)
             self.is_new_collage = False
             
-            # 윈도우 크기 조정
+            # 윈도우 크기 조정 (수정된 부분)
             window = self.window()
             if window:
-                # 윈도우 크기를 캔버스 크기 + 여유 공간으로 설정
-                window_width = width + 400  # 우측 패널 너비 고려
-                window_height = height + 100  # 상단 여유 공간
+                # 현재 윈도우 크기 가져오기
+                current_width = window.width()
+                current_height = window.height()
                 
-                # 최소 크기 설정
-                min_width = max(800, window_width)
-                min_height = max(600, window_height)
+                # 기본 여백 설정
+                right_panel_width = 400  # 우측 패널 너비
+                top_margin = 100  # 상단 여유 공간
+                
+                # 캔버스 기반 최소 크기 계산
+                canvas_based_width = width + right_panel_width
+                canvas_based_height = height + top_margin
+                
+                # 최소 윈도우 크기 계산 (현재 크기와 캔버스 기반 크기 중 더 큰 값 사용)
+                # 단, 기본 최소 크기(1200, 800)보다는 작아지지 않도록 설정
+                new_width = max(1200, current_width, canvas_based_width)
+                new_height = max(800, current_height, canvas_based_height)
                 
                 # 윈도우 크기 조정
-                window.setMinimumSize(min_width, min_height)
-                window.resize(min_width, min_height)
+                window.setMinimumSize(new_width, new_height)
+                window.resize(new_width, new_height)
                 
                 # 캔버스 크기 조정
                 self.setMinimumSize(width, height)
@@ -325,8 +532,8 @@ class Canvas(QWidget):
             painter.setPen(QPen(QColor("#2C3E50")))
             size_text = f"{self.width()} x {self.height()} px"
             painter.drawText(self.rect().adjusted(10, 10, -10, -10), 
-                           Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
-                           size_text)
+                          Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
+                          size_text)
     
     def export_collage(self):
         """현재 콜라주를 이미지로 내보냅니다."""
