@@ -23,6 +23,7 @@ class FurnitureItem(QWidget):
         self.setMouseTracking(True)
         self.is_resizing = False
         self.resize_handle = QRect(self.width() - 20, self.height() - 20, 20, 20)
+        self.maintain_aspect_ratio = False  # 비율 유지 여부를 저장하는 변수 추가
     
     def load_image(self):
         """가구 이미지를 로드합니다."""
@@ -66,15 +67,25 @@ class FurnitureItem(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # 이미지 그리기 (비율 유지)
-        scaled_pixmap = self.pixmap.scaled(
-            self.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
-        )
-        x = (self.width() - scaled_pixmap.width()) // 2
-        y = (self.height() - scaled_pixmap.height()) // 2
-        painter.drawPixmap(x, y, scaled_pixmap)
+        # 이미지 그리기 (비율 유지 여부에 따라 다르게 처리)
+        if self.maintain_aspect_ratio:
+            # 비율 유지하면서 그리기
+            scaled_pixmap = self.pixmap.scaled(
+                self.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            x = (self.width() - scaled_pixmap.width()) // 2
+            y = (self.height() - scaled_pixmap.height()) // 2
+            painter.drawPixmap(x, y, scaled_pixmap)
+        else:
+            # 비율 무시하고 꽉 채우기
+            scaled_pixmap = self.pixmap.scaled(
+                self.size(),
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            painter.drawPixmap(0, 0, scaled_pixmap)
         
         # 테두리 그리기
         pen = QPen(QColor("#2C3E50"))
@@ -95,9 +106,18 @@ class FurnitureItem(QWidget):
     
     def mouseMoveEvent(self, event):
         if self.is_resizing:
-            # 비율 유지하면서 크기 조절
-            new_width = max(100, event.pos().x())
-            new_height = int(new_width / self.original_ratio)
+            # Shift 키가 눌린 상태인지 확인
+            self.maintain_aspect_ratio = event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+            
+            if self.maintain_aspect_ratio:
+                # 비율 유지하면서 크기 조절
+                new_width = max(100, event.pos().x())
+                new_height = int(new_width / self.original_ratio)
+            else:
+                # 비율 무시하고 자유롭게 크기 조절
+                new_width = max(100, event.pos().x())
+                new_height = max(100, event.pos().y())
+            
             self.setFixedSize(new_width, new_height)
             self.resize_handle = QRect(new_width - 20, new_height - 20, 20, 20)
         elif event.buttons() & Qt.MouseButton.LeftButton:
