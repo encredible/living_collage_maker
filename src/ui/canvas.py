@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton,
                              QMenu, QMessageBox, QFileDialog)
 from PyQt6.QtCore import Qt, QSize, QPoint, QRect
-from PyQt6.QtGui import QPainter, QColor, QPen, QPixmap, QDrag, QPainterPath
+from PyQt6.QtGui import QPainter, QColor, QPen, QPixmap, QDrag, QPainterPath, QTransform
 from models.furniture import Furniture
 from ui.dialogs import CanvasSizeDialog
 from ui.panels import ExplorerPanel, BottomPanel
@@ -111,6 +111,7 @@ class FurnitureItem(QWidget):
     def contextMenuEvent(self, event):
         menu = QMenu(self)
         delete_action = menu.addAction("삭제")
+        flip_action = menu.addAction("좌우 반전")
         action = menu.exec(event.globalPos())
         
         if action == delete_action:
@@ -145,6 +146,12 @@ class FurnitureItem(QWidget):
                 print("[삭제] 캔버스 영역을 찾을 수 없음")
             self.deleteLater()
             print(f"[삭제] 가구 아이템 삭제 완료: {self.furniture.name}")
+        elif action == flip_action:
+            # 이미지 좌우 반전
+            transform = QTransform()
+            transform.scale(-1, 1)  # x축 방향으로 -1을 곱하여 좌우 반전
+            self.pixmap = self.pixmap.transformed(transform)
+            self.update()  # 위젯 다시 그리기
 
     def deleteLater(self):
         """가구 아이템이 삭제될 때 하단 패널을 업데이트합니다."""
