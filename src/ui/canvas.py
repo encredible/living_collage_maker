@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton,
                              QDialog, QGroupBox, QVBoxLayout, QGraphicsColorizeEffect,
                              QGraphicsOpacityEffect)
 from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QTimer, QThread, pyqtSignal
+import weakref
 from PyQt6.QtGui import (QPainter, QColor, QPen, QPixmap, QDrag, QPainterPath, 
                         QTransform, QImage, QBrush, QPainterPath, QColorSpace)
 from models.furniture import Furniture
@@ -80,6 +81,10 @@ class ImageAdjuster:
     # 처리 방식 선택
     _use_numpy = True  # NumPy 벡터화 처리 사용 여부
     
+    # 이미지 고유 ID 카운터
+    _image_id_counter = 0
+    _image_id_map = weakref.WeakKeyDictionary()  # 픽셀맵 -> 고유 ID 매핑
+    
     @staticmethod
     def initialize():
         """이미지 조정 시스템을 초기화합니다."""
@@ -139,19 +144,31 @@ class ImageAdjuster:
             return QPixmap()
 
         try:
-            # 캐시 키 생성 (이미지 객체 ID, 이미지 크기, 색온도, 밝기, 채도)
+            # 픽셀맵에 고유 ID 할당 (객체 ID 대신 고유 ID 사용)
+            if pixmap not in ImageAdjuster._image_id_map:
+                ImageAdjuster._image_id_counter += 1
+                ImageAdjuster._image_id_map[pixmap] = ImageAdjuster._image_id_counter
+                
+            image_id = ImageAdjuster._image_id_map[pixmap]
+            
+            # 캐시 키 생성 (이미지 고유 ID, 이미지 크기, 색온도, 밝기, 채도)
             # 크기별로 다른 캐시 키 사용 (크기별 캐싱)
             size_key = f"{pixmap.width()}x{pixmap.height()}"
-            cache_key = (id(pixmap), size_key, round(color_temp), round(brightness), round(saturation))
+            cache_key = (image_id, size_key, round(color_temp), round(brightness), round(saturation))
             
-            # 캐시에 결과가 있으면 바로 반환
+            # 캐시에 결과가 있으면 복사본 반환 (참조 공유 방지)
             if cache_key in ImageAdjuster._effect_cache:
-                return ImageAdjuster._effect_cache[cache_key]
+                cached_pixmap = ImageAdjuster._effect_cache[cache_key]
+                # 깊은 복사 수행하여 반환 (서로 다른 객체가 되도록)
+                return cached_pixmap.copy()
             
-            # 이미지 크기가 작은 경우 NumPy 처리
+            # 이미지 복사본 생성 (원본 변경 방지)
+            pixmap_copy = pixmap.copy()
+            
+            # NumPy 처리 사용
             if ImageAdjuster._use_numpy:
                 result_pixmap = ImageAdjuster.apply_effects_numpy(
-                    pixmap,
+                    pixmap_copy,
                     color_temp,
                     brightness,
                     saturation
@@ -159,7 +176,7 @@ class ImageAdjuster:
             else:
                 # 기존 방식으로 처리
                 # 이미지를 QImage로 변환
-                image = pixmap.toImage()
+                image = pixmap_copy.toImage()
                 
                 # 결과 이미지 생성 (미리 메모리 할당)
                 width = image.width()
@@ -215,21 +232,24 @@ class ImageAdjuster:
                 # 처리된 이미지로 QPixmap 생성
                 result_pixmap = QPixmap.fromImage(result)
             
+            # 결과를 새로운 객체로 깊은 복사
+            final_result = result_pixmap.copy()
+            
             # 결과 캐싱
             if len(ImageAdjuster._effect_cache) >= ImageAdjuster._cache_size:
                 # 캐시가 꽉 찼으면 첫 번째 항목 제거
                 ImageAdjuster._effect_cache.pop(next(iter(ImageAdjuster._effect_cache)))
             
             # 결과 캐싱
-            ImageAdjuster._effect_cache[cache_key] = result_pixmap
+            ImageAdjuster._effect_cache[cache_key] = final_result.copy()
             
-            return result_pixmap
+            return final_result
             
         except Exception as e:
             import traceback
             traceback.print_exc()
             print(f"[ImageAdjuster] 이미지 처리 중 오류 발생: {e}")
-            return pixmap  # 오류 발생 시 원본 반환
+            return pixmap.copy()  # 오류 발생 시 원본의 복사본 반환
             
     @staticmethod
     def apply_effects_numpy(pixmap, color_temp, brightness, saturation):
@@ -237,18 +257,21 @@ class ImageAdjuster:
         try:
             import numpy as np
             
-            # QImage로 변환
+            # QImage로 변환 (Deep Copy 생성)
             image = pixmap.toImage()
+            
+            # 이미지 포맷 저장 (원본 포맷 유지)
+            original_format = image.format()
             
             # 이미지 크기
             width = image.width()
             height = image.height()
             
             # ARGB 형식으로 NumPy 배열 생성
-            ptr = image.bits()
+            ptr = image.constBits()  # constBits 사용 (읽기 전용)
             ptr.setsize(image.sizeInBytes())
             
-            # 배열 복사본 생성 (변경 가능하도록)
+            # 깊은 복사본 생성 (변경 가능하도록)
             arr = np.array(ptr).reshape(height, width, 4).copy()
             
             # 알파 채널 분리 (투명도)
@@ -272,9 +295,9 @@ class ImageAdjuster:
             
             # 완전히 투명한 픽셀의 색상값 저장
             # 나중에 복원하기 위함 (투명 픽셀의 색상은 무시되어야 함)
-            r_transparent = r[transparent_mask]
-            g_transparent = g[transparent_mask]
-            b_transparent = b[transparent_mask]
+            r_transparent = r[transparent_mask].copy() if np.any(transparent_mask) else None
+            g_transparent = g[transparent_mask].copy() if np.any(transparent_mask) else None
+            b_transparent = b[transparent_mask].copy() if np.any(transparent_mask) else None
             
             # 색온도와 밝기 적용
             r *= r_temp * brightness_factor
@@ -296,7 +319,7 @@ class ImageAdjuster:
             
             # 알파값이 0인 완전 투명한 픽셀의 RGB 값 복원
             # 투명 픽셀은 보이지 않으므로 원래 색상을 유지
-            if np.any(transparent_mask):
+            if np.any(transparent_mask) and r_transparent is not None:
                 r[transparent_mask] = r_transparent
                 g[transparent_mask] = g_transparent
                 b[transparent_mask] = b_transparent
@@ -304,9 +327,8 @@ class ImageAdjuster:
             # 반투명 픽셀의 경우, 프리멀티플라이드 알파 처리
             if np.any(semitransparent_mask):
                 alpha_factor = alpha[semitransparent_mask].astype(np.float32) / 255.0
-                r[semitransparent_mask] = np.clip(r[semitransparent_mask].astype(np.float32) * alpha_factor, 0, 255).astype(np.uint8)
-                g[semitransparent_mask] = np.clip(g[semitransparent_mask].astype(np.float32) * alpha_factor, 0, 255).astype(np.uint8)
-                b[semitransparent_mask] = np.clip(b[semitransparent_mask].astype(np.float32) * alpha_factor, 0, 255).astype(np.uint8)
+                # 프리멀티플라이드 알파 처리는 제거 (이미지 깨짐 현상 방지)
+                # 대신 원래 색상값 그대로 유지
             
             # 결과 배열에 다시 채널 할당 (BGRA 순서)
             arr[:, :, 0] = b
@@ -314,11 +336,14 @@ class ImageAdjuster:
             arr[:, :, 2] = r
             arr[:, :, 3] = alpha  # 원본 알파 채널 유지
             
-            # QImage 생성
-            result_image = QImage(arr.data, width, height, image.bytesPerLine(), image.format())
+            # QImage 생성 (원본 포맷 유지)
+            result_image = QImage(arr.data, width, height, image.bytesPerLine(), original_format)
+            
+            # 고품질 변환 설정
             result_pixmap = QPixmap.fromImage(result_image)
             
-            return result_pixmap
+            # 항상 복사본 반환
+            return result_pixmap.copy()
             
         except Exception as e:
             import traceback
@@ -326,7 +351,7 @@ class ImageAdjuster:
             print(f"[ImageAdjuster] NumPy 이미지 처리 오류: {e}")
             # 에러 발생 시 기본 방식으로 처리
             ImageAdjuster._use_numpy = False
-            return pixmap
+            return pixmap.copy()
     
     @staticmethod
     def calculate_temperature_rgb(temperature):
@@ -408,6 +433,10 @@ class FurnitureItem(QWidget):
                 image_data, 
                 self.furniture.image_filename
             )
+            
+            # 명시적 깊은 복사 추가 (캐시 참조 공유 방지)
+            if not self.pixmap.isNull():
+                self.pixmap = self.pixmap.copy()
             
             # 원본 이미지 저장 (픽셀 데이터 복사본 생성)
             if not self.pixmap.isNull():
@@ -569,7 +598,7 @@ class FurnitureItem(QWidget):
             print("[이미지 조정] 원본 이미지가 없습니다. 현재 이미지를 원본으로 사용합니다.")
             self.original_pixmap = self.pixmap.copy()
         
-        # 현재 이미지 백업
+        # 현재 이미지 백업 (깊은 복사)
         self.backup_pixmap = self.pixmap.copy()
         
         # 미리보기용 축소 이미지 생성 (더 작게)
@@ -589,6 +618,9 @@ class FurnitureItem(QWidget):
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.FastTransformation  # 빠른 변환 사용
         )
+        
+        # 명시적 깊은 복사 추가
+        self.preview_pixmap = self.preview_pixmap.copy()
         
         # 이미지 처리 스레드
         self.processor = None
@@ -613,6 +645,13 @@ class FurnitureItem(QWidget):
                 border: none;
                 margin-top: 10px;
                 font-weight: bold;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 0px;
+                padding: 0px 5px 0px 0px;
+                margin-top: 2px;
             }
             QSlider::groove:horizontal {
                 border: 1px solid #999999;
@@ -627,6 +666,10 @@ class FurnitureItem(QWidget):
                 width: 18px;
                 margin: -5px 0;
                 border-radius: 9px;
+            }
+            QSlider::handle:horizontal:focus {
+                background: #1a557c;
+                border: 2px solid #3498db;
             }
             QPushButton {
                 padding: 5px 15px;
@@ -643,9 +686,56 @@ class FurnitureItem(QWidget):
             }
         """)
         
+        # 다이얼로그를 이동 가능하게 만들기 위한 변수
+        self.dragging_dialog = False
+        self.drag_dialog_pos = None
+        
         # 메인 레이아웃
         layout = QVBoxLayout(self.adjust_dialog)
         layout.setContentsMargins(15, 15, 15, 15)  # 여백 추가
+        
+        # 제목 표시줄 추가 (드래그 가능한 영역)
+        title_bar = QWidget()
+        title_bar.setFixedHeight(30)
+        title_bar.setStyleSheet("""
+            background-color: #2C3E50;
+            border-radius: 3px 3px 0 0;
+            color: white;
+        """)
+        title_layout = QHBoxLayout(title_bar)
+        title_layout.setContentsMargins(10, 0, 10, 0)
+        
+        # 제목 라벨
+        title_label = QLabel("이미지 조정")
+        title_label.setStyleSheet("font-weight: bold; color: white;")
+        title_layout.addWidget(title_label)
+        
+        # 닫기 버튼
+        close_button = QPushButton("×")
+        close_button.setFixedSize(20, 20)
+        close_button.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: white;
+                font-weight: bold;
+                font-size: 16px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #e74c3c;
+                border-radius: 10px;
+            }
+        """)
+        close_button.clicked.connect(self.cancel_image_adjustments)
+        title_layout.addWidget(close_button)
+        
+        # 제목 표시줄을 레이아웃에 추가
+        layout.addWidget(title_bar)
+        
+        # 제목 표시줄에 마우스 이벤트 설정
+        title_bar.mousePressEvent = self.dialog_mouse_press_event
+        title_bar.mouseMoveEvent = self.dialog_mouse_move_event
+        title_bar.mouseReleaseEvent = self.dialog_mouse_release_event
         
         # 슬라이더 생성 함수
         def create_slider_group(title, value, min_val, max_val, step):
@@ -679,6 +769,11 @@ class FurnitureItem(QWidget):
         brightness_group, self.brightness_slider, self.brightness_label = create_slider_group("밝기", self.brightness, 0, 200, 25)
         saturation_group, self.saturation_slider, self.saturation_label = create_slider_group("채도", self.saturation, 0, 200, 25)
         
+        # 슬라이더에 포커스 관련 설정 추가
+        self.temp_slider.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.brightness_slider.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.saturation_slider.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
         # 버튼 레이아웃
         button_layout = QHBoxLayout()
         
@@ -699,14 +794,19 @@ class FurnitureItem(QWidget):
         button_layout.addWidget(cancel_button)
         
         # 슬라이더 값 변경 시 이벤트 연결
-        self.temp_slider.valueChanged.connect(self.preview_adjustments)
-        self.brightness_slider.valueChanged.connect(self.preview_adjustments)
-        self.saturation_slider.valueChanged.connect(self.preview_adjustments)
+        self.temp_slider.valueChanged.connect(lambda: self.preview_adjustments(self.temp_slider))
+        self.brightness_slider.valueChanged.connect(lambda: self.preview_adjustments(self.brightness_slider))
+        self.saturation_slider.valueChanged.connect(lambda: self.preview_adjustments(self.saturation_slider))
         
         # 슬라이더 슬립페이지 이벤트 분리 - 마우스 놓을 때만 업데이트
         self.temp_slider.sliderReleased.connect(self.force_update_preview)
         self.brightness_slider.sliderReleased.connect(self.force_update_preview)
         self.saturation_slider.sliderReleased.connect(self.force_update_preview)
+        
+        # 키보드 이벤트 추가
+        self.temp_slider.keyPressEvent = lambda e: self.slider_key_press_event(e, self.temp_slider)
+        self.brightness_slider.keyPressEvent = lambda e: self.slider_key_press_event(e, self.brightness_slider)
+        self.saturation_slider.keyPressEvent = lambda e: self.slider_key_press_event(e, self.saturation_slider)
         
         # 레이아웃에 위젯 추가
         layout.addWidget(temp_group)
@@ -725,7 +825,38 @@ class FurnitureItem(QWidget):
         # 다이얼로그 표시
         self.adjust_dialog.exec()
 
-    def preview_adjustments(self):
+    def dialog_mouse_press_event(self, event):
+        """다이얼로그 드래그를 위한 마우스 누르기 이벤트"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.dragging_dialog = True
+            self.drag_dialog_pos = event.globalPosition().toPoint() - self.adjust_dialog.pos()
+            event.accept()
+    
+    def dialog_mouse_move_event(self, event):
+        """다이얼로그 드래그를 위한 마우스 이동 이벤트"""
+        if self.dragging_dialog and event.buttons() & Qt.MouseButton.LeftButton:
+            self.adjust_dialog.move(event.globalPosition().toPoint() - self.drag_dialog_pos)
+            event.accept()
+    
+    def dialog_mouse_release_event(self, event):
+        """다이얼로그 드래그를 위한 마우스 놓기 이벤트"""
+        self.dragging_dialog = False
+    
+    def slider_key_press_event(self, event, slider):
+        """슬라이더의 키보드 이벤트 처리"""
+        step = slider.pageStep() // 4 or 1  # pageStep의 1/4 또는 최소 1
+        
+        if event.key() == Qt.Key.Key_Left:
+            slider.setValue(slider.value() - step)
+            event.accept()
+        elif event.key() == Qt.Key.Key_Right:
+            slider.setValue(slider.value() + step)
+            event.accept()
+        else:
+            # 기본 키 이벤트 처리
+            type(slider).__base__.keyPressEvent(slider, event)
+
+    def preview_adjustments(self, focused_slider=None):
         """슬라이더 값에 따라 이미지 미리보기를 업데이트합니다."""
         # 슬라이더 값 가져오기
         temp = self.temp_slider.value()
@@ -741,6 +872,10 @@ class FurnitureItem(QWidget):
         self.pending_temp = temp
         self.pending_brightness = brightness
         self.pending_saturation = saturation
+        
+        # 슬라이더에 포커스 설정
+        if focused_slider:
+            focused_slider.setFocus()
         
         # 이미 타이머가 활성화되어 있으면 추가 처리 생략 (디바운싱)
         if self.update_timer.isActive():
@@ -787,8 +922,8 @@ class FurnitureItem(QWidget):
 
     def update_processed_image_and_unlock(self, processed_pixmap):
         """이미지 처리 결과를 업데이트하고 처리 잠금을 해제합니다."""
-        # 처리된 이미지를 적용
-        self.pixmap = processed_pixmap
+        # 처리된 이미지의 깊은 복사본 생성 후 적용
+        self.pixmap = processed_pixmap.copy()
         
         # 위젯 화면 갱신
         self.update()
@@ -851,14 +986,26 @@ class FurnitureItem(QWidget):
     def finalize_adjustments(self, final_pixmap):
         """이미지 조정 결과를 최종 적용하고 다이얼로그를 닫습니다."""
         try:
-            # 좌우 반전 유지
+            # 결과 깊은 복사 생성
+            final_result = final_pixmap.copy()
+            
+            # 좌우 반전 유지 (고품질 변환 사용)
             if self.is_flipped:
                 transform = QTransform()
                 transform.scale(-1, 1)
-                final_pixmap = final_pixmap.transformed(transform)
+                final_result = final_result.transformed(transform, Qt.TransformationMode.SmoothTransformation)
+                final_result = final_result.copy()  # 변환 후에도 깊은 복사
             
-            # 최종 결과 적용
-            self.pixmap = final_pixmap
+            # 최종 결과 적용 - 원본 크기로 복원 (필요한 경우)
+            if final_result.size() != self.original_pixmap.size():
+                final_result = final_result.scaled(
+                    self.original_pixmap.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                final_result = final_result.copy()  # 스케일링 후에도 깊은 복사
+            
+            self.pixmap = final_result
             self.update()
             
             # 처리 플래그 해제
@@ -925,34 +1072,75 @@ class FurnitureItem(QWidget):
             # 좌우 반전 상태 저장
             was_flipped = self.is_flipped
             
+            # preview_pixmap이 없는 경우(불러오기 시) 원본 이미지 사용
+            source_pixmap = None
+            if hasattr(self, 'preview_pixmap') and not self.preview_pixmap.isNull():
+                # 항상 미리보기 이미지의 깊은 복사본 사용
+                source_pixmap = self.preview_pixmap.copy()
+            else:
+                # 원본 이미지의 깊은 복사본 사용
+                source_pixmap = self.original_pixmap.copy()
+                
+                # preview_pixmap 설정 - 고품질 스케일링 적용
+                self.preview_pixmap = self.original_pixmap.scaled(
+                    self.original_pixmap.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                # preview_pixmap도 깊은 복사본으로 설정
+                self.preview_pixmap = self.preview_pixmap.copy()
+                
+                print(f"[이미지 조정] 미리보기 이미지 생성: {source_pixmap.width()}x{source_pixmap.height()}")
+            
             # 효과 적용
+            print(f"[이미지 조정] 효과 적용 시작: 색온도={temp}K, 밝기={brightness}%, 채도={saturation}%")
             adjusted_pixmap = ImageAdjuster.apply_effects(
-                self.preview_pixmap,  # 미리보기 이미지 사용
+                source_pixmap,  # 미리보기 또는 원본 이미지의 복사본 사용
                 temp, 
                 brightness, 
                 saturation
             )
             
-            # 결과 적용
+            # 결과 적용 - 항상 깊은 복사본 사용
             if not adjusted_pixmap.isNull():
-                self.pixmap = adjusted_pixmap
+                # 이미지 객체가 별도의 메모리를 사용하도록 명시적 복사
+                self.pixmap = adjusted_pixmap.copy()
                 
-                # 좌우 반전이 적용되어 있었다면 다시 적용
+                # 좌우 반전이 적용되어 있었다면 다시 적용 (고품질 변환 사용)
                 if was_flipped:
                     transform = QTransform()
                     transform.scale(-1, 1)
-                    self.pixmap = self.pixmap.transformed(transform)
+                    self.pixmap = self.pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
+                    # 변환 후에도 복사본 생성
+                    self.pixmap = self.pixmap.copy()
                 
                 # 위젯 업데이트
                 self.update()
-                print(f"[이미지 조정] 효과 적용: 색온도={temp}K, 밝기={brightness}%, 채도={saturation}%")
+                print(f"[이미지 조정] 효과 적용 성공: 색온도={temp}K, 밝기={brightness}%, 채도={saturation}%")
             else:
                 print("[이미지 조정] 효과 적용 실패: 결과 이미지가 유효하지 않습니다.")
+                # 원본으로 복원
+                self.pixmap = self.original_pixmap.copy()
+                if was_flipped:
+                    transform = QTransform()
+                    transform.scale(-1, 1)
+                    self.pixmap = self.pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
+                    self.pixmap = self.pixmap.copy()
+                self.update()
                 
         except Exception as e:
             import traceback
             traceback.print_exc()
             print(f"[이미지 조정] 오류 발생: {e}")
+            # 오류 발생 시 원본으로 복원
+            if hasattr(self, 'original_pixmap') and not self.original_pixmap.isNull():
+                self.pixmap = self.original_pixmap.copy()
+                if hasattr(self, 'is_flipped') and self.is_flipped:
+                    transform = QTransform()
+                    transform.scale(-1, 1)
+                    self.pixmap = self.pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
+                    self.pixmap = self.pixmap.copy()
+                self.update()
     
     def deleteLater(self):
         """가구 아이템이 삭제될 때 하단 패널을 업데이트합니다."""
@@ -1001,8 +1189,8 @@ class FurnitureItem(QWidget):
         
     def update_processed_image_and_unlock(self, processed_pixmap):
         """이미지 처리 결과를 업데이트하고 처리 잠금을 해제합니다."""
-        # 처리된 이미지를 적용
-        self.pixmap = processed_pixmap
+        # 처리된 이미지의 깊은 복사본 생성 후 적용
+        self.pixmap = processed_pixmap.copy()
         
         # 위젯 화면 갱신
         self.update()
@@ -1204,6 +1392,19 @@ class Canvas(QWidget):
                             if (item.color_temp != 6500 or 
                                 item.brightness != 100 or 
                                 item.saturation != 100):
+                                # 로드 시에는 원본 이미지가 생성되어 있는지 확인
+                                if item.original_pixmap is None or item.original_pixmap.isNull():
+                                    item.original_pixmap = item.pixmap.copy()
+                                    print(f"[불러오기] 원본 이미지 복사: {furniture.name}")
+                                
+                                # 불러오기 시 원본 이미지 사이즈 확인
+                                print(f"[불러오기] 이미지 크기: {item.original_pixmap.width()}x{item.original_pixmap.height()}")
+                                
+                                # 미리보기 이미지 속성 설정
+                                item.preview_pixmap = item.original_pixmap.copy()
+                                
+                                # 이미지 효과 적용
+                                print(f"[불러오기] 이미지 효과 적용: 색온도={item.color_temp}K, 밝기={item.brightness}%, 채도={item.saturation}%")
                                 item.apply_image_effects(
                                     item.color_temp, 
                                     item.brightness, 
