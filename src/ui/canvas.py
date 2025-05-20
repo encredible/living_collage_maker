@@ -412,6 +412,9 @@ class FurnitureItem(QWidget):
         self.update_timer.setSingleShot(True)
         self.update_timer.setInterval(100)  # 100ms 딜레이
         self.update_timer.timeout.connect(self.apply_pending_update)
+        
+        # 선택 상태 추가
+        self.is_selected = False
     
     def update_resize_handle(self):
         """크기가 변경될 때 리사이즈 핸들 위치를 업데이트합니다."""
@@ -499,18 +502,27 @@ class FurnitureItem(QWidget):
             )
             painter.drawPixmap(0, 0, scaled_pixmap)
         
-        # 테두리 그리기
-        pen = QPen(QColor("#2C3E50"))
-        pen.setWidth(2)
-        painter.setPen(pen)
-        painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
-        
-        # 리사이즈 핸들 그리기
-        painter.fillRect(self.resize_handle, QColor("#2C3E50"))
+        # 선택된 경우에만 테두리와 리사이즈 핸들 그리기
+        if self.is_selected:
+            pen = QPen(QColor("#2C3E50"))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
+            
+            # 리사이즈 핸들 그리기
+            painter.fillRect(self.resize_handle, QColor("#2C3E50"))
     
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            if self.resize_handle.contains(event.pos()):
+            # 캔버스 찾기
+            canvas_area = self.parent()
+            if canvas_area:
+                canvas = canvas_area.parent()
+                if canvas and hasattr(canvas, 'select_furniture_item'):
+                    # 선택 처리를 Canvas 클래스로 위임
+                    canvas.select_furniture_item(self)
+            
+            if self.is_selected and self.resize_handle.contains(event.pos()):
                 self.is_resizing = True
             else:
                 self.raise_()  # 위젯을 최상위로
@@ -1231,10 +1243,39 @@ class Canvas(QWidget):
         # 초기 상태 설정
         self.is_new_collage = True
         self.furniture_items = []
+        self.selected_item = None  # 현재 선택된 가구 아이템
         
         # 우클릭 메뉴 활성화
         self.canvas_area.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.canvas_area.customContextMenuRequested.connect(self.show_context_menu)
+        
+        # 캔버스 영역 클릭 이벤트 설정
+        self.canvas_area.mousePressEvent = self.canvas_mouse_press_event
+    
+    # 캔버스 영역 클릭 이벤트 처리
+    def canvas_mouse_press_event(self, event):
+        # 빈 공간 클릭 시 선택 해제
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.deselect_all_items()
+    
+    # 가구 아이템 선택 처리
+    def select_furniture_item(self, item):
+        # 현재 선택된 아이템이 있으면 선택 해제
+        if self.selected_item is not None:
+            self.selected_item.is_selected = False
+            self.selected_item.update()
+        
+        # 새 아이템 선택
+        self.selected_item = item
+        item.is_selected = True
+        item.update()
+    
+    # 모든 가구 아이템 선택 해제
+    def deselect_all_items(self):
+        if self.selected_item is not None:
+            self.selected_item.is_selected = False
+            self.selected_item.update()
+            self.selected_item = None
     
     def show_context_menu(self, position):
         """캔버스 영역에서 우클릭했을 때 컨텍스트 메뉴를 표시합니다."""
@@ -1337,6 +1378,9 @@ class Canvas(QWidget):
                 for item in self.furniture_items:
                     item.deleteLater()
                 self.furniture_items.clear()
+                
+                # 선택 상태 초기화
+                self.selected_item = None
                 
                 # 캔버스 크기 설정
                 canvas_width = collage_data["canvas"]["width"]
@@ -1461,6 +1505,9 @@ class Canvas(QWidget):
                 item.deleteLater()
             self.furniture_items.clear()
             
+            # 선택 상태 초기화
+            self.selected_item = None
+            
             # 캔버스 크기 설정
             self.canvas_area.setFixedSize(width, height)
             self.is_new_collage = False
@@ -1530,6 +1577,9 @@ class Canvas(QWidget):
                 item.move(drop_pos - QPoint(item.width() // 2, item.height() // 2))  # 드롭 위치 기준으로 중앙에 배치
                 item.show()
                 self.furniture_items.append(item)
+                
+                # 새로 추가된 아이템을 선택 상태로 설정
+                self.select_furniture_item(item)
                 
                 # 하단 패널 업데이트
                 self.update_bottom_panel()
