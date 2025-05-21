@@ -1,8 +1,10 @@
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout
+from models.furniture import Furniture
+from services.supabase_client import SupabaseClient
+
 from .canvas import Canvas
 from .panels import ExplorerPanel, InfoPanel
-from services.supabase_client import SupabaseClient
-from models.furniture import Furniture
+
 
 class MainWindow(QMainWindow):
     def __init__(self):

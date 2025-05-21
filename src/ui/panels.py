@@ -1,14 +1,14 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QLineEdit, QScrollArea, QPushButton,
-                             QComboBox, QGridLayout, QTableView, QFrame, QListWidget, QListWidgetItem)
-from PyQt6.QtCore import Qt, QSize, QMimeData, pyqtSignal, QAbstractTableModel, QModelIndex, QThread, pyqtSlot
-from PyQt6.QtGui import QPixmap, QDrag, QStandardItemModel, QStandardItem, QPainter, QPen, QColor
+import weakref  # Python 내장 weakref 모듈 사용
+
+from PyQt6.QtCore import Qt, QSize, QMimeData, pyqtSignal, QThread, pyqtSlot
+from PyQt6.QtGui import QPixmap, QDrag, QStandardItemModel, QStandardItem
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
+                             QLabel, QLineEdit, QPushButton,
+                             QComboBox, QGridLayout, QTableView, QFrame)
 from models.furniture import Furniture
 from services.image_service import ImageService
 from services.supabase_client import SupabaseClient
-import threading
-from concurrent.futures import ThreadPoolExecutor
-import weakref  # Python 내장 weakref 모듈 사용
+
 
 class ImageLoaderThread(QThread):
     image_loaded = pyqtSignal(str, QPixmap)

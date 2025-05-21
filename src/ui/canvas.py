@@ -1,21 +1,20 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton,
-                             QMenu, QMessageBox, QFileDialog, QSlider, QHBoxLayout, 
-                             QDialog, QGroupBox, QVBoxLayout, QGraphicsColorizeEffect,
-                             QGraphicsOpacityEffect)
-from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QTimer, QThread, pyqtSignal
+import datetime
+import json
+import os
+import time
 import weakref
-from PyQt6.QtGui import (QPainter, QColor, QPen, QPixmap, QDrag, QPainterPath, 
-                        QTransform, QImage, QBrush, QPainterPath, QColorSpace)
+
+from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, QThread, pyqtSignal
+from PyQt6.QtGui import (QPainter, QColor, QPen, QPixmap, QTransform, QImage)
+from PyQt6.QtWidgets import (QWidget, QLabel, QPushButton,
+                             QMenu, QMessageBox, QFileDialog, QSlider, QHBoxLayout,
+                             QDialog, QGroupBox, QVBoxLayout)
 from models.furniture import Furniture
-from ui.dialogs import CanvasSizeDialog
-from ui.panels import ExplorerPanel, BottomPanel
 from services.image_service import ImageService
 from services.supabase_client import SupabaseClient
-import os
-import json
-import datetime
-import numpy as np
-import time
+from ui.dialogs import CanvasSizeDialog
+from ui.panels import ExplorerPanel, BottomPanel
+
 
 class ImageProcessor(QThread):
     """이미지 처리를 별도 스레드에서 수행하는 클래스"""

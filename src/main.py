@@ -1,7 +1,10 @@
 import sys
+
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout
+
 from ui.canvas import Canvas
 from ui.panels import ExplorerPanel, BottomPanel
+
 
 class MainWindow(QMainWindow):
     def __init__(self):

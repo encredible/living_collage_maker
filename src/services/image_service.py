@@ -1,10 +1,11 @@
 import os
-from PyQt6.QtGui import QPixmap, QImage
-from PyQt6.QtCore import QBuffer, QIODevice, Qt, QSize
-import hashlib
-from concurrent.futures import ThreadPoolExecutor
 import threading
 import weakref
+from concurrent.futures import ThreadPoolExecutor
+
+from PyQt6.QtCore import QBuffer, QIODevice, Qt
+from PyQt6.QtGui import QPixmap
+
 
 class ImageService:
     def __init__(self):

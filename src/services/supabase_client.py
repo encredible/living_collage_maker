@@ -1,8 +1,10 @@
 import os
-from supabase import create_client, Client
-from dotenv import load_dotenv
-from functools import lru_cache
 import time
+from functools import lru_cache
+
+from dotenv import load_dotenv
+from supabase import create_client, Client
+
 
 class SupabaseClient:
     def __init__(self):
