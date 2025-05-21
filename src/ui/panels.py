@@ -166,7 +166,7 @@ class FurnitureItem(QWidget):
 class FurnitureTableModel(QStandardItemModel):
     def __init__(self):
         super().__init__()
-        self.setHorizontalHeaderLabels(["썸네일", "브랜드", "이름", "가격"])
+        self.setHorizontalHeaderLabels(["썸네일", "브랜드", "이름", "가격", "타입", "위치", "색상", "스타일"])
         self.furniture_items = []
         self.image_service = ImageService()
         self.supabase = SupabaseClient()
@@ -229,8 +229,30 @@ class FurnitureTableModel(QStandardItemModel):
         price_item.setEditable(False)
         price_item.setData(furniture, Qt.ItemDataRole.UserRole)
         
+        # 타입 아이템
+        type_item = QStandardItem(furniture.type)
+        type_item.setEditable(False)
+        type_item.setData(furniture, Qt.ItemDataRole.UserRole)
+        
+        # 위치 아이템
+        locations_str = ", ".join(furniture.locations) if furniture.locations else ""
+        location_item = QStandardItem(locations_str)
+        location_item.setEditable(False)
+        location_item.setData(furniture, Qt.ItemDataRole.UserRole)
+        
+        # 색상 아이템
+        color_item = QStandardItem(furniture.color)
+        color_item.setEditable(False)
+        color_item.setData(furniture, Qt.ItemDataRole.UserRole)
+        
+        # 스타일 아이템
+        styles_str = ", ".join(furniture.styles) if furniture.styles else ""
+        style_item = QStandardItem(styles_str)
+        style_item.setEditable(False)
+        style_item.setData(furniture, Qt.ItemDataRole.UserRole)
+        
         # 행 추가
-        self.appendRow([thumbnail_item, brand_item, name_item, price_item])
+        self.appendRow([thumbnail_item, brand_item, name_item, price_item, type_item, location_item, color_item, style_item])
         self.furniture_items.append(furniture)
         
         # 이미지 비동기 로딩 시작
