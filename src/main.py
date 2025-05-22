@@ -1,6 +1,7 @@
 import sys
 
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout
+from PyQt6.QtGui import QAction
 
 from ui.canvas import Canvas
 from ui.panels import ExplorerPanel, BottomPanel
@@ -11,6 +12,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Living Collage Maker")
         self.setup_ui()
+        self.setup_menubar()
     
     def setup_ui(self):
         # 중앙 위젯 설정
@@ -44,15 +46,36 @@ class MainWindow(QMainWindow):
         # 초기 크기 설정
         self.resize(1200, 800)
     
+    def setup_menubar(self):
+        menubar = self.menuBar()
+        file_menu = menubar.addMenu('파일')
+
+        save_action = QAction('저장하기', self)
+        save_action.triggered.connect(lambda: self.canvas.save_collage())
+        file_menu.addAction(save_action)
+
+        load_action = QAction('불러오기', self)
+        load_action.triggered.connect(lambda: self.canvas.load_collage())
+        file_menu.addAction(load_action)
+
+        new_action = QAction('새 콜라주 만들기', self)
+        new_action.triggered.connect(lambda: self.canvas.create_new_collage())
+        file_menu.addAction(new_action)
+
+        export_action = QAction('콜라주 내보내기', self)
+        export_action.triggered.connect(lambda: self.canvas.export_collage())
+        file_menu.addAction(export_action)
+
     def update_bottom_panel(self):
         """하단 패널을 업데이트합니다."""
         self.bottom_panel.update_panel(self.canvas.furniture_items)
 
 def main():
     app = QApplication(sys.argv)
+    app.setApplicationName("Living Collage Maker")
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
 
 if __name__ == "__main__":
-    main() 
+    main()

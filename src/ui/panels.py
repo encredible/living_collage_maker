@@ -479,47 +479,6 @@ class ExplorerPanel(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
         
-        # 버튼 레이아웃
-        button_layout = QHBoxLayout()
-        
-        # 새 콜라주 버튼
-        new_collage_btn = QPushButton("새 콜라주 만들기")
-        new_collage_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2C3E50;
-                color: white;
-                border: none;
-                padding: 10px;
-                font-size: 15px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #34495E;
-            }
-        """)
-        new_collage_btn.clicked.connect(self.create_new_collage)
-        button_layout.addWidget(new_collage_btn)
-        
-        # 내보내기 버튼
-        export_btn = QPushButton("콜라주 내보내기")
-        export_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #27AE60;
-                color: white;
-                border: none;
-                padding: 10px;
-                font-size: 15px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #2ECC71;
-            }
-        """)
-        export_btn.clicked.connect(self.export_collage)
-        button_layout.addWidget(export_btn)
-        
-        layout.addLayout(button_layout)
-        
         # 검색 및 필터 영역
         filter_layout = QGridLayout()
         filter_layout.setSpacing(10)
@@ -736,28 +695,6 @@ class ExplorerPanel(QWidget):
         """패널이 삭제될 때 로딩 중인 스레드 정리"""
         if hasattr(self, 'furniture_model'):
             self.furniture_model.clear_furniture()
-    
-    def create_new_collage(self):
-        """새 콜라주를 생성합니다."""
-        from ui.canvas import Canvas
-        # 메인 윈도우에서 캔버스 위젯 찾기
-        main_window = self.window()
-        if main_window:
-            # 캔버스 위젯 찾기
-            canvas = main_window.findChild(Canvas)
-            if canvas:
-                canvas.create_new_collage()
-    
-    def export_collage(self):
-        """현재 콜라주를 이미지로 내보냅니다."""
-        from ui.canvas import Canvas
-        # 메인 윈도우에서 캔버스 위젯 찾기
-        main_window = self.window()
-        if main_window:
-            # 캔버스 위젯 찾기
-            canvas = main_window.findChild(Canvas)
-            if canvas:
-                canvas.export_collage()
     
     def filter_furniture(self):
         """가구 목록을 필터링합니다."""
