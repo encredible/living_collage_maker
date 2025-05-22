@@ -1,6 +1,7 @@
 import sys
 
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter
+from PyQt6.QtCore import Qt, QTimer, QPoint
 from PyQt6.QtGui import QAction
 
 from ui.canvas import Canvas
@@ -11,41 +12,118 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Living Collage Maker")
+        self.previous_canvas_global_top_left = None # 이전 캔버스 전역 좌상단 좌표
+        self.is_initializing_geometry = True # 초기화 중 플래그
         self.setup_ui()
         self.setup_menubar()
+    
+    def showEvent(self, event):
+        """윈도우가 처음 표시될 때 호출됩니다."""
+        super().showEvent(event)
+        # UI가 완전히 로드된 후 geometry를 가져오기 위해 QTimer.singleShot 사용
+        QTimer.singleShot(0, self.initialize_canvas_coordinates)
+
+    def initialize_canvas_coordinates(self):
+        """초기 캔버스 전역 좌상단 좌표를 저장합니다."""
+        if self.canvas and self.canvas.isVisible(): # 캔버스가 존재하고 보이는지 확인
+            self.previous_canvas_global_top_left = self.canvas.mapToGlobal(QPoint(0, 0))
+            self.is_initializing_geometry = False # 초기화 완료
+            # print(f"Initial canvas global top-left set: {self.previous_canvas_global_top_left}") # 디버깅용
+        else:
+            # 캔버스가 아직 준비되지 않았으면 잠시 후 다시 시도
+            QTimer.singleShot(100, self.initialize_canvas_coordinates)
+    
+    def resizeEvent(self, event):
+        """창 크기가 변경될 때 호출됩니다."""
+        super().resizeEvent(event) # 부모 클래스의 resizeEvent 호출
+        # print(f"Window resized. New size: {event.size()}") # 디버깅용
+        if not self.is_initializing_geometry: # 초기화가 끝난 후에만 호출
+            self.update_furniture_positions_on_canvas_move()
     
     def setup_ui(self):
         # 중앙 위젯 설정
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        # 메인 레이아웃
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-        
-        # 상단 레이아웃 (캔버스와 우측 패널)
-        top_layout = QHBoxLayout()
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(0)
-        
         # 캔버스
         self.canvas = Canvas()
-        top_layout.addWidget(self.canvas)
         
         # 우측 패널
         self.explorer_panel = ExplorerPanel()
-        top_layout.addWidget(self.explorer_panel)
-        
-        main_layout.addLayout(top_layout)
         
         # 하단 패널
         self.bottom_panel = BottomPanel()
-        main_layout.addWidget(self.bottom_panel)
+
+        # 수평 스플리터 (캔버스 + 우측 패널)
+        self.splitter_horizontal = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter_horizontal.addWidget(self.canvas)
+        self.splitter_horizontal.addWidget(self.explorer_panel)
+        
+        # 수평 스플리터의 스트레치 비율 설정 (캔버스 확장 위주)
+        self.splitter_horizontal.setStretchFactor(0, 1) # 캔버스
+        self.splitter_horizontal.setStretchFactor(1, 0) # 탐색 패널 (고정 또는 작은 비율)
+        self.splitter_horizontal.setSizes([800, 400]) # 초기 크기 (캔버스, 탐색 패널)
+
+        # 메인 수직 스플리터 (위쪽 영역[이제 수평 스플리터] + 하단 패널)
+        self.splitter_main_vertical = QSplitter(Qt.Orientation.Vertical)
+        self.splitter_main_vertical.addWidget(self.splitter_horizontal) # dummy_top_widget 대신 splitter_horizontal 추가
+        self.splitter_main_vertical.addWidget(self.bottom_panel)
+
+        # 메인 수직 스플리터의 스트레치 비율 설정
+        self.splitter_main_vertical.setStretchFactor(0, 1) # 상단 영역 (캔버스 포함) 확장 위주
+        self.splitter_main_vertical.setStretchFactor(1, 0) # 하단 패널 (고정 또는 작은 비율)
+        self.splitter_main_vertical.setSizes([700, 100]) # 초기 크기 (상단 영역, 하단 패널)
+
+        # 스플리터 시그널 연결 (이름 변경된 스플리터로 업데이트)
+        self.splitter_main_vertical.splitterMoved.connect(self.handle_splitter_moved)
+        self.splitter_horizontal.splitterMoved.connect(self.handle_splitter_moved) # splitter_inner_horizontal -> splitter_horizontal
+
+        # 메인 레이아웃에 메인 수직 스플리터 추가
+        main_layout = QHBoxLayout(central_widget) 
+        main_layout.addWidget(self.splitter_main_vertical)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
         # 초기 크기 설정
         self.resize(1200, 800)
     
+    def handle_splitter_moved(self, pos, index):
+        """스플리터 핸들이 움직였을 때 호출됩니다."""
+        # print(f"Splitter moved: pos={pos}, index={index}") # 디버깅용
+        if not self.is_initializing_geometry: # 초기화가 끝난 후에만 호출
+            self.update_furniture_positions_on_canvas_move()
+    
+    def update_furniture_positions_on_canvas_move(self):
+        """캔버스 지오메트리 변경에 따라 가구 위치를 업데이트하는 공통 로직."""
+        if self.is_initializing_geometry or not self.canvas or not self.canvas.isVisible() or self.previous_canvas_global_top_left is None:
+            # print("Update check: Conditions not met for furniture adjustment.") # 디버깅용
+            # 초기화 중이거나, 캔버스가 준비되지 않았거나, 이전 지오메트리가 없으면 반환
+            if not self.is_initializing_geometry and self.canvas and self.canvas.isVisible() and not self.previous_canvas_global_top_left:
+                 # 이 경우는 초기화 직후 splitterMoved가 먼저 호출될 수 있는 엣지 케이스 방지
+                 self.previous_canvas_global_top_left = self.canvas.mapToGlobal(QPoint(0, 0))
+            return
+
+        current_canvas_global_top_left = self.canvas.mapToGlobal(QPoint(0, 0))
+        
+        # previous_canvas_global_top_left 와 current_canvas_global_top_left가 동일한 객체인지 확인 (얕은 복사 문제 방지)
+        if self.previous_canvas_global_top_left is current_canvas_global_top_left:
+            # print("Warning: previous and current geometry are the same object!") # 디버깅용
+            # 이런 경우는 없어야 하지만, 만약을 위해 이전 지오메트리를 복사해서 사용하도록 강제할 수 있음
+            # self.previous_canvas_global_top_left = QRect(self.previous_canvas_global_top_left) # 예시
+            pass 
+
+        offset_x = current_canvas_global_top_left.x() - self.previous_canvas_global_top_left.x()
+        offset_y = current_canvas_global_top_left.y() - self.previous_canvas_global_top_left.y()
+
+        # print(f"Canvas global TL changed. Previous: {self.previous_canvas_global_top_left}, Current: {current_canvas_global_top_left}")
+        # print(f"Calculated global offset: dx={offset_x}, dy={offset_y}") 
+
+        if offset_x != 0 or offset_y != 0:
+            self.canvas.adjust_furniture_positions(-offset_x, -offset_y)
+        
+        # 현재 지오메트리를 다음 비교를 위해 저장 (새 QRect 객체로 복사하여 저장)
+        self.previous_canvas_global_top_left = current_canvas_global_top_left # QRect는 값 타입처럼 동작하지만, 명시적 복사가 안전할 수 있음
+
     def setup_menubar(self):
         menubar = self.menuBar()
         file_menu = menubar.addMenu('파일')
@@ -65,7 +143,7 @@ class MainWindow(QMainWindow):
         export_action = QAction('콜라주 내보내기', self)
         export_action.triggered.connect(lambda: self.canvas.export_collage())
         file_menu.addAction(export_action)
-
+    
     def update_bottom_panel(self):
         """하단 패널을 업데이트합니다."""
         self.bottom_panel.update_panel(self.canvas.furniture_items)

@@ -18,7 +18,6 @@ from ui.panels import ExplorerPanel, BottomPanel
 
 class ImageProcessor(QThread):
     """이미지 처리를 별도 스레드에서 수행하는 클래스"""
-    # 처리 완료 시 신호 발생
     finished = pyqtSignal(QPixmap)
     
     def __init__(self, pixmap, color_temp, brightness, saturation):
@@ -1213,11 +1212,13 @@ class Canvas(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
-        self.setMinimumSize(800, 600)
-        self.setStyleSheet("""
-            QWidget {
-                background-color: white;
-                border: 2px solid #2C3E50;
+        # Canvas 자체의 최소 크기는 내부 canvas_area에 의해 결정되도록 할 수 있음
+        # 또는 아주 작은 값으로 설정하여 canvas_area가 크기를 주도하도록 함
+        self.setMinimumSize(100, 100) # Canvas의 최소 크기
+        self.setStyleSheet(""" 
+            QWidget { 
+                background-color: transparent; /* Canvas 자체는 투명하게 처리 */ 
+                border: none; /* Canvas 자체의 테두리는 제거 */
             }
         """)
         
@@ -1225,33 +1226,34 @@ class Canvas(QWidget):
         if not ImageAdjuster._initialized:
             ImageAdjuster.initialize()
         
-        # 레이아웃 설정
+        # Canvas의 메인 레이아웃
+        # 이 레이아웃은 canvas_area만을 포함하고, canvas_area의 크기에 맞춰 Canvas 크기가 조절되도록 함
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)  # 여백 제거
+        layout.setContentsMargins(0, 0, 0, 0)
         
-        # 캔버스 영역
-        self.canvas_area = QWidget()
+        # 캔버스 영역 (실제 가구가 배치되는 곳, 이 위젯의 크기를 사용자가 조절)
+        self.canvas_area = QWidget() # QWidget으로 유지
+        self.canvas_area.setMinimumSize(300, 200) # canvas_area의 최소 크기
         self.canvas_area.setStyleSheet("""
-            QWidget {
+            QWidget { /* canvas_area 스타일 */
                 background-color: white;
-                border: 2px solid #2C3E50;
+                border: 2px solid #2C3E50; /* 작업 영역 테두리 */
             }
         """)
-        layout.addWidget(self.canvas_area)
+        layout.addWidget(self.canvas_area) # Canvas의 레이아웃에 canvas_area 추가
         
         # 초기 상태 설정
         self.is_new_collage = True
         self.furniture_items = []
-        self.selected_item = None  # 현재 선택된 가구 아이템
+        self.selected_item = None
         
-        # 우클릭 메뉴 활성화
+        # 우클릭 메뉴 활성화 (canvas_area에 대해)
         self.canvas_area.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.canvas_area.customContextMenuRequested.connect(self.show_context_menu)
         
-        # 캔버스 영역 클릭 이벤트 설정
+        # 캔버스 영역 클릭 이벤트 설정 (canvas_area에 대해)
         self.canvas_area.mousePressEvent = self.canvas_mouse_press_event
     
-    # 캔버스 영역 클릭 이벤트 처리
     def canvas_mouse_press_event(self, event):
         # 빈 공간 클릭 시 선택 해제
         if event.button() == Qt.MouseButton.LeftButton:
@@ -1359,7 +1361,6 @@ class Canvas(QWidget):
     
     def load_collage(self):
         """저장된 콜라주를 JSON 파일에서 불러옵니다."""
-        # 파일 열기 다이얼로그
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "콜라주 불러오기",
@@ -1369,21 +1370,17 @@ class Canvas(QWidget):
         
         if file_path:
             try:
-                # JSON 파일 로드
                 with open(file_path, 'r', encoding='utf-8') as f:
                     collage_data = json.load(f)
                 
-                # 기존 가구 아이템 제거
                 for item in self.furniture_items:
                     item.deleteLater()
                 self.furniture_items.clear()
-                
-                # 선택 상태 초기화
                 self.selected_item = None
                 
-                # 캔버스 크기 설정
                 canvas_width = collage_data["canvas"]["width"]
                 canvas_height = collage_data["canvas"]["height"]
+                # canvas_area 크기 설정 (이때 eventFilter가 호출되어 Canvas 크기도 조절됨)
                 self.canvas_area.setFixedSize(canvas_width, canvas_height)
                 self.is_new_collage = False
                 
@@ -1504,42 +1501,14 @@ class Canvas(QWidget):
                 item.deleteLater()
             self.furniture_items.clear()
             
-            # 선택 상태 초기화
             self.selected_item = None
             
-            # 캔버스 크기 설정
+            # canvas_area 크기 설정 (이때 eventFilter가 호출되어 Canvas 크기도 조절됨)
             self.canvas_area.setFixedSize(width, height)
             self.is_new_collage = False
             
-            # 윈도우 크기 조정 (수정된 부분)
-            window = self.window()
-            if window:
-                # 현재 윈도우 크기 가져오기
-                current_width = window.width()
-                current_height = window.height()
-                
-                # 기본 여백 설정
-                right_panel_width = 400  # 우측 패널 너비
-                top_margin = 100  # 상단 여유 공간
-                
-                # 캔버스 기반 최소 크기 계산
-                canvas_based_width = width + right_panel_width
-                canvas_based_height = height + top_margin
-                
-                # 최소 윈도우 크기 계산 (현재 크기와 캔버스 기반 크기 중 더 큰 값 사용)
-                # 단, 기본 최소 크기(1200, 800)보다는 작아지지 않도록 설정
-                new_width = max(1200, current_width, canvas_based_width)
-                new_height = max(800, current_height, canvas_based_height)
-                
-                # 윈도우 크기 조정
-                window.setMinimumSize(new_width, new_height)
-                window.resize(new_width, new_height)
-                
-                # 캔버스 크기 조정
-                self.setMinimumSize(width, height)
-                self.resize(width, height)
-            
-            self.canvas_area.update()
+            # self.canvas_area.update() # 필요시 canvas_area 직접 업데이트
+            # self.update() # Canvas 업데이트 (paintEvent 호출하여 크기 텍스트 등 갱신)
             
             # 하단 패널 업데이트
             self.update_bottom_panel()
@@ -1588,6 +1557,15 @@ class Canvas(QWidget):
             print(f"드롭 이벤트 처리 중 오류 발생: {e}")
             event.ignore()
     
+    def adjust_furniture_positions(self, delta_x, delta_y):
+        """캔버스 이동에 따라 모든 가구 아이템의 위치를 조정합니다."""
+        # print(f"Adjusting furniture positions by dx={delta_x}, dy={delta_y}") # 디버깅용
+        for item in self.furniture_items:
+            new_x = item.x() + delta_x
+            new_y = item.y() + delta_y
+            item.move(new_x, new_y)
+            # print(f"Moved {item.furniture.name} to ({new_x}, {new_y})") # 디버깅용
+            
     def update_bottom_panel(self):
         """하단 패널을 업데이트합니다."""
         # 메인 윈도우에서 하단 패널 업데이트
@@ -1596,32 +1574,26 @@ class Canvas(QWidget):
             main_window.update_bottom_panel()
     
     def paintEvent(self, event):
+        # Canvas 자체의 paintEvent는 이제 배경을 그리지 않거나 최소한의 것만 그림
+        # 대부분의 그리기는 self.canvas_area에서 일어나거나, 
+        # self.canvas_area의 내용을 기반으로 Canvas가 추가적인 정보를 그림(예: 크기 텍스트)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        # 배경 그리기
-        painter.fillRect(self.rect(), QColor("#ffffff"))
-        
-        # 가이드라인 그리기
-        if self.is_new_collage:
-            pen = QPen(QColor("#2C3E50"))
-            pen.setStyle(Qt.PenStyle.DashLine)
-            pen.setWidth(2)
+
+        # Canvas의 배경은 투명하게 처리했으므로, 여기서는 아무것도 그리지 않거나
+        # canvas_area 주변에만 필요한 것을 그릴 수 있음.
+
+        # canvas_area의 현재 크기를 가져와서 Canvas에 표시 (디버깅 또는 정보 제공용)
+        if not self.is_new_collage and hasattr(self, 'canvas_area'):
+            pen = QPen(QColor("#888888")) # 다른 색으로 표시
+            pen.setWidth(1)
             painter.setPen(pen)
-            painter.drawRect(self.rect().adjusted(10, 10, -10, -10))
-        else:
-            # 캔버스 크기 표시
-            pen = QPen(QColor("#2C3E50"))
-            pen.setWidth(2)
-            painter.setPen(pen)
-            painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
-            
-            # 크기 텍스트 표시
-            painter.setPen(QPen(QColor("#2C3E50")))
-            size_text = f"{self.width()} x {self.height()} px"
-            painter.drawText(self.rect().adjusted(10, 10, -10, -10), 
+            size_text = f"Area: {self.canvas_area.width()} x {self.canvas_area.height()} px"
+            # Canvas의 왼쪽 상단에 canvas_area 크기 표시
+            painter.drawText(QRect(5, 5, self.width() - 10, 20), 
                           Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
                           size_text)
+        # super().paintEvent(event) # 만약 QWidget의 기본 paintEvent가 필요하다면
     
     def export_collage(self):
         """현재 콜라주를 이미지로 내보냅니다."""
@@ -1664,4 +1636,4 @@ class Canvas(QWidget):
                 QMessageBox.information(self, "성공", "콜라주가 성공적으로 저장되었습니다.")
                 
             except Exception as e:
-                QMessageBox.critical(self, "오류", f"이미지 저장 중 오류가 발생했습니다: {str(e)}") 
+                QMessageBox.critical(self, "오류", f"이미지 저장 중 오류가 발생했습니다: {str(e)}")
