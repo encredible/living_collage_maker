@@ -169,10 +169,41 @@ class PdfExportService(QObject):
                 fontName=self.korean_font_name
             )
             
+            furniture_title_style = ParagraphStyle(
+                'FurnitureTitle',
+                parent=styles['Heading3'],
+                fontSize=14,
+                spaceBefore=15,
+                spaceAfter=8,
+                textColor=colors.HexColor('#2C3E50'),
+                fontName=self.korean_font_bold
+            )
+            
             normal_style = ParagraphStyle(
                 'CustomNormal',
                 parent=styles['Normal'],
-                fontName=self.korean_font_name
+                fontName=self.korean_font_name,
+                fontSize=10,
+                spaceAfter=4
+            )
+            
+            info_style = ParagraphStyle(
+                'InfoStyle',
+                parent=styles['Normal'],
+                fontName=self.korean_font_name,
+                fontSize=9,
+                textColor=colors.HexColor('#5D6D7E'),
+                spaceAfter=3
+            )
+            
+            link_style = ParagraphStyle(
+                'LinkStyle',
+                parent=styles['Normal'],
+                fontName=self.korean_font_name,
+                fontSize=10,
+                textColor=colors.HexColor('#3498DB'),
+                underline=1,
+                spaceAfter=8
             )
             
             # PDF 콘텐츠 구성
@@ -196,85 +227,75 @@ class PdfExportService(QObject):
                 except Exception as e:
                     print(f"이미지 추가 오류: {e}")
             
-            # 가구 목록 제목
-            story.append(Paragraph("목록", heading_style))
-            
-            # 가구 정보 테이블 생성
-            table_data = []
-            table_data.append(['제품명', '브랜드', '타입', '가격', '크기'])
-            
-            for item in furniture_items:
+            # 각 가구를 개별 섹션으로 표시
+            for i, item in enumerate(furniture_items, 1):
                 furniture = item.furniture
                 
-                # 가격 포맷팅
-                price_str = f"{furniture.price:,}원" if furniture.price else "가격 정보 없음"
+                # 가구 제목 (번호 포함)
+                furniture_name = furniture.name or "이름 없음"
+                story.append(Paragraph(f"{i}. {furniture_name}", furniture_title_style))
+                
+                # 기본 정보 섹션
+                info_lines = []
+                
+                # 브랜드 정보
+                if furniture.brand:
+                    info_lines.append(f"<b>브랜드:</b> {furniture.brand}")
+                
+                # 타입 정보
+                if furniture.type:
+                    info_lines.append(f"<b>카테고리:</b> {furniture.type}")
+                
+                # 가격 정보
+                if furniture.price:
+                    price_str = f"{furniture.price:,}원"
+                    info_lines.append(f"<b>가격:</b> {price_str}")
                 
                 # 크기 정보
                 if furniture.width and furniture.depth and furniture.height:
-                    size_str = f"{furniture.width}×{furniture.depth}×{furniture.height}mm"
-                else:
-                    size_str = "크기 정보 없음"
+                    size_str = f"{furniture.width} × {furniture.depth} × {furniture.height} mm"
+                    info_lines.append(f"<b>크기 (가로×세로×높이):</b> {size_str}")
                 
-                table_data.append([
-                    furniture.name or "이름 없음",
-                    furniture.brand or "브랜드 정보 없음", 
-                    furniture.type or "타입 정보 없음",
-                    price_str,
-                    size_str
-                ])
-            
-            # 테이블 생성 및 스타일 적용
-            table = Table(table_data, colWidths=[50*mm, 35*mm, 25*mm, 30*mm, 40*mm])
-            table.setStyle(TableStyle([
-                # 헤더 스타일
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498DB')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('FONTNAME', (0, 0), (-1, 0), self.korean_font_bold),
-                ('FONTSIZE', (0, 0), (-1, 0), 12),
-                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                
-                # 데이터 행 스타일
-                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-                ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
-                ('FONTNAME', (0, 1), (-1, -1), self.korean_font_name),
-                ('FONTSIZE', (0, 1), (-1, -1), 10),
-                ('ALIGN', (0, 1), (-1, -1), 'LEFT'),
-                
-                # 전체 테이블 스타일
-                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#BDC3C7')),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8F9FA')])
-            ]))
-            
-            story.append(table)
-            
-            # 가구별 상세 정보
-            for item in furniture_items:
-                furniture = item.furniture
-                story.append(Spacer(1, 15))
-                
-                # 가구 이름
-                furniture_title_style = ParagraphStyle(
-                    'FurnitureTitle',
-                    parent=styles['Heading3'],
-                    fontSize=14,
-                    spaceAfter=10,
-                    textColor=colors.HexColor('#2C3E50'),
-                    fontName=self.korean_font_bold
-                )
-                story.append(Paragraph(furniture.name or "이름 없음", furniture_title_style))
-                
-                # 상세 정보
-                details = []
-                if furniture.description:
-                    details.append(f"<b>설명:</b> {furniture.description}")
+                # 좌석 높이
                 if furniture.seat_height:
-                    details.append(f"<b>좌석 높이:</b> {furniture.seat_height}mm")
-                if furniture.link:
-                    details.append(f"<b>제품 바로가기:</b> {furniture.link}")
+                    info_lines.append(f"<b>좌석 높이:</b> {furniture.seat_height}mm")
                 
-                for detail in details:
-                    story.append(Paragraph(detail, normal_style))
+                # 기본 정보 출력
+                for line in info_lines:
+                    story.append(Paragraph(line, normal_style))
+                
+                # 설명
+                if furniture.description:
+                    story.append(Paragraph(f"<b>제품 설명:</b>", normal_style))
+                    story.append(Paragraph(furniture.description, info_style))
+                
+                # 제품 링크 (하이퍼링크)
+                if furniture.link:
+                    link_text = f'<a href="{furniture.link}" color="#3498DB"><u>🔗 제품 상세보기</u></a>'
+                    story.append(Paragraph(link_text, link_style))
+                
+                # 가구 간 구분선
+                if i < len(furniture_items):
+                    story.append(Spacer(1, 10))
+                    # 구분선 표시
+                    line_table = Table([['']], colWidths=[170*mm])
+                    line_table.setStyle(TableStyle([
+                        ('LINEBELOW', (0, 0), (-1, -1), 1, colors.HexColor('#E5E7E9')),
+                    ]))
+                    story.append(line_table)
+                    story.append(Spacer(1, 10))
+            
+            # 푸터 정보
+            story.append(Spacer(1, 20))
+            footer_style = ParagraphStyle(
+                'FooterStyle',
+                parent=styles['Normal'],
+                fontName=self.korean_font_name,
+                fontSize=8,
+                textColor=colors.HexColor('#95A5A6'),
+                alignment=TA_CENTER
+            )
+            story.append(Paragraph("Living Collage Maker로 생성된 콜라주입니다.", footer_style))
             
             # PDF 빌드
             doc.build(story)
