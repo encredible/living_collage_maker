@@ -20,7 +20,17 @@ class ExplorerPanel(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("explorer_panel")
         self.supabase = SupabaseClient()
+        
+        # 컬럼 너비를 저장하는 딕셔너리 (기본값)
+        self.column_widths = {
+            0: 100,  # 썸네일
+            1: 100,  # 브랜드
+            2: 200,  # 이름
+            3: 100,  # 가격
+        }
+        
         self.setup_ui()
         self.load_furniture_data()  # 초기 데이터 로드
     
@@ -170,6 +180,13 @@ class ExplorerPanel(QWidget):
         self.furniture_table.setColumnWidth(1, 100)  # 브랜드 컬럼
         self.furniture_table.setColumnWidth(2, 200)  # 이름 컬럼
         self.furniture_table.setColumnWidth(3, 100)  # 가격 컬럼
+        
+        # 컬럼 너비 변경 감지 시그널 연결
+        header = self.furniture_table.horizontalHeader()
+        header.sectionResized.connect(self.on_column_resized)
+        
+        # 초기 컬럼 너비 설정
+        self.setup_column_widths()
         
         # 셀 수정 비활성화
         self.furniture_table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
@@ -349,3 +366,19 @@ class ExplorerPanel(QWidget):
                 
                 # 드래그 시작
                 drag.exec() 
+
+    def on_column_resized(self, logical_index, old_size, new_size):
+        """컬럼 너비 변경 감지 시그널 처리"""
+        self.column_widths[logical_index] = new_size
+        # print(f"[탐색 패널 컬럼 너비 변경] 컬럼 {logical_index}: {old_size} -> {new_size}")  # 로그 주석 처리
+
+    def setup_column_widths(self):
+        """저장된 컬럼 너비를 적용하는 메서드"""
+        header = self.furniture_table.horizontalHeader()
+        
+        # 저장된 너비로 각 컬럼 설정
+        for column_index, width in self.column_widths.items():
+            self.furniture_table.setColumnWidth(column_index, width)
+        
+        # 마지막 컬럼은 stretch하지 않도록 설정
+        header.setStretchLastSection(True) 
