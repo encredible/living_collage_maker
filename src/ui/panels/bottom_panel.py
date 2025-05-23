@@ -14,6 +14,22 @@ class SelectedFurniturePanel(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        # 컬럼 너비를 저장하는 딕셔너리 (기본값, 13개 컬럼)
+        self.column_widths = {
+            0: 300,  # 이름 (2배로 증가)
+            1: 120,  # 브랜드
+            2: 80,   # 타입
+            3: 100,  # 가격
+            4: 80,   # 색상
+            5: 120,  # 위치
+            6: 100,  # 스타일
+            7: 140,  # 크기
+            8: 80,   # 좌석높이
+            9: 200,  # 설명
+            10: 150, # 링크
+            11: 100, # 작성자
+            12: 60,  # 개수 (맨 오른쪽)
+        }
         self.setup_ui()
     
     def setup_ui(self):
@@ -63,25 +79,15 @@ class SelectedFurniturePanel(QWidget):
         self.selected_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.selected_table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         
-        # 컬럼 너비 설정 (14개 컬럼에 맞게 조정)
-        header = self.selected_table.horizontalHeader()
-        self.selected_table.setColumnWidth(0, 150)  # 이름
-        self.selected_table.setColumnWidth(1, 120)  # 브랜드
-        self.selected_table.setColumnWidth(2, 80)   # 타입
-        self.selected_table.setColumnWidth(3, 100)  # 가격
-        self.selected_table.setColumnWidth(4, 60)   # 개수
-        self.selected_table.setColumnWidth(5, 120)  # 총 가격
-        self.selected_table.setColumnWidth(6, 80)   # 색상
-        self.selected_table.setColumnWidth(7, 120)  # 위치
-        self.selected_table.setColumnWidth(8, 100)  # 스타일
-        self.selected_table.setColumnWidth(9, 140)  # 크기
-        self.selected_table.setColumnWidth(10, 80)  # 좌석높이
-        self.selected_table.setColumnWidth(11, 200) # 설명
-        self.selected_table.setColumnWidth(12, 150) # 링크
-        self.selected_table.setColumnWidth(13, 100) # 작성자
+        # 테이블 편집 방지
+        self.selected_table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
         
-        # 마지막 컬럼은 stretch하지 않도록 설정
-        header.setStretchLastSection(False)
+        # 컬럼 너비 변경 감지 시그널 연결
+        header = self.selected_table.horizontalHeader()
+        header.sectionResized.connect(self.on_column_resized)
+        
+        # 초기 컬럼 너비 설정
+        self.setup_column_widths()
         
         # 높이 제한
         self.selected_table.setMaximumHeight(200)
@@ -91,6 +97,57 @@ class SelectedFurniturePanel(QWidget):
         self.selected_table.doubleClicked.connect(self.on_double_click)
         
         layout.addWidget(self.selected_table)
+        
+        # 총계 표시 영역 추가
+        self.create_summary_section(layout)
+        
+        print("[선택된 가구 패널] 초기화 완료")
+    
+    def create_summary_section(self, layout):
+        """총계 표시 영역을 생성합니다."""
+        from PyQt6.QtWidgets import QHBoxLayout, QLabel
+        
+        # 총계 영역 컨테이너
+        summary_widget = QWidget()
+        summary_widget.setStyleSheet("""
+            QWidget {
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                margin: 5px 0;
+            }
+        """)
+        summary_layout = QHBoxLayout(summary_widget)
+        summary_layout.setContentsMargins(15, 10, 15, 10)
+        
+        # 총 가구 개수 라벨
+        self.total_count_label = QLabel("총 가구: 0개")
+        self.total_count_label.setStyleSheet("""
+            QLabel {
+                font-weight: bold;
+                font-size: 14px;
+                color: #495057;
+                border: none;
+            }
+        """)
+        
+        # 총 가격 라벨
+        self.total_price_label = QLabel("총 가격: ₩0")
+        self.total_price_label.setStyleSheet("""
+            QLabel {
+                font-weight: bold;
+                font-size: 14px;
+                color: #495057;
+                border: none;
+            }
+        """)
+        
+        # 스페이서 추가하여 오른쪽 정렬
+        summary_layout.addWidget(self.total_count_label)
+        summary_layout.addStretch()
+        summary_layout.addWidget(self.total_price_label)
+        
+        layout.addWidget(summary_widget)
         
         # 구분선 추가
         separator = QFrame()
@@ -105,9 +162,32 @@ class SelectedFurniturePanel(QWidget):
             }
         """)
         layout.addWidget(separator)
-        
-        print("[선택된 가구 패널] 초기화 완료")
     
+    def on_column_resized(self, logical_index, old_size, new_size):
+        """컬럼 너비가 변경될 때 호출되는 메서드"""
+        # 변경된 컬럼 너비를 저장
+        self.column_widths[logical_index] = new_size
+        print(f"[컬럼 너비 변경] 컬럼 {logical_index}: {old_size} -> {new_size}")
+    
+    def setup_column_widths(self):
+        """저장된 컬럼 너비를 적용하는 메서드"""
+        header = self.selected_table.horizontalHeader()
+        
+        # 저장된 너비로 각 컬럼 설정
+        for column_index, width in self.column_widths.items():
+            self.selected_table.setColumnWidth(column_index, width)
+        
+        # 마지막 컬럼은 stretch하지 않도록 설정
+        header.setStretchLastSection(False)
+    
+    def update_summary(self):
+        """총계 정보를 업데이트합니다."""
+        total_count = self.selected_model.get_total_count()
+        total_price = self.selected_model.get_total_price()
+        
+        self.total_count_label.setText(f"총 가구: {total_count}개")
+        self.total_price_label.setText(f"총 가격: ₩{total_price:,}")
+
     def on_double_click(self, index):
         """테이블 아이템 더블클릭 시 처리"""
         if index.isValid():
@@ -144,6 +224,10 @@ class SelectedFurniturePanel(QWidget):
             # 개수만큼 모델에 추가 (내부적으로 집계됨)
             for _ in range(count):
                 self.selected_model.add_furniture(furniture)
+        
+        # 모델 업데이트 후 컬럼 너비 재설정 및 총계 업데이트
+        self.setup_column_widths()
+        self.update_summary()
         
         print(f"[선택된 가구 패널] 가구 목록 업데이트 완료, 총 {len(furniture_count)}개 타입")
 

@@ -417,11 +417,11 @@ def test_selected_furniture_table_model():
     """SelectedFurnitureTableModel의 기본 동작을 테스트합니다."""
     model = SelectedFurnitureTableModel()
     
-    # 초기 상태 확인 (새로운 14개 컬럼)
-    assert model.columnCount() == 14
+    # 초기 상태 확인 (새로운 13개 컬럼, 총 가격 제거됨)
+    assert model.columnCount() == 13
     expected_headers = [
-        "이름", "브랜드", "타입", "가격", "개수", "총 가격", "색상", 
-        "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자"
+        "이름", "브랜드", "타입", "가격", "색상", 
+        "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자", "개수"
     ]
     for i, header in enumerate(expected_headers):
         assert model.headerData(i, Qt.Orientation.Horizontal) == header
@@ -431,30 +431,55 @@ def test_selected_furniture_table_model():
         id='1', brand='TestBrand', name='Test Chair', image_filename='chair.png', price=100,
         type='Chair', description='Test Description', link='http://example.com',
         color='Brown', locations=['Living Room'], styles=['Modern'],
-        width=50, depth=50, height=100, seat_height=45, author='test_author', created_at=''
+        width=60, depth=50, height=80, seat_height=45, author='TestAuthor'
     )
     
-    # 같은 가구 2개 추가
-    model.add_furniture(sample_furniture)
     model.add_furniture(sample_furniture)
     
-    assert model.rowCount() == 1  # 같은 가구는 하나의 행으로 집계
-    assert model.item(0, 0).text() == sample_furniture.name  # 이름
-    assert model.item(0, 1).text() == sample_furniture.brand  # 브랜드
-    assert model.item(0, 2).text() == sample_furniture.type  # 타입
-    assert model.item(0, 3).text() == f"₩{sample_furniture.price:,}"  # 가격
-    assert model.item(0, 4).text() == "2"  # 개수
-    assert model.item(0, 5).text() == f"₩{sample_furniture.price * 2:,}"  # 총 가격
-    assert model.item(0, 6).text() == sample_furniture.color  # 색상
-    assert model.item(0, 7).text() == ", ".join(sample_furniture.locations)  # 위치
-    assert model.item(0, 8).text() == ", ".join(sample_furniture.styles)  # 스타일
-    assert model.item(0, 9).text() == "50×50×100mm"  # 크기
-    assert model.item(0, 10).text() == "45mm"  # 좌석높이
-    assert model.item(0, 11).text() == sample_furniture.description  # 설명
-    assert model.item(0, 12).text() == sample_furniture.link  # 링크
-    assert model.item(0, 13).text() == sample_furniture.author  # 작성자
+    # 모델에 행이 추가되었는지 확인
+    assert model.rowCount() == 1
     
-    # clear 테스트
+    # 각 컬럼의 데이터 확인 (13개 컬럼)
+    assert model.item(0, 0).text() == "Test Chair"  # 이름
+    assert model.item(0, 1).text() == "TestBrand"   # 브랜드
+    assert model.item(0, 2).text() == "Chair"       # 타입
+    assert model.item(0, 3).text() == "₩100"        # 가격
+    assert model.item(0, 4).text() == "Brown"       # 색상
+    assert model.item(0, 5).text() == "Living Room" # 위치
+    assert model.item(0, 6).text() == "Modern"      # 스타일
+    assert model.item(0, 7).text() == "60×50×80mm"  # 크기
+    assert model.item(0, 8).text() == "45mm"        # 좌석높이
+    assert model.item(0, 9).text() == "Test Description"  # 설명
+    assert model.item(0, 10).text() == "http://example.com"  # 링크
+    assert model.item(0, 11).text() == "TestAuthor" # 작성자
+    assert model.item(0, 12).text() == "1"          # 개수
+    
+    # 같은 가구 다시 추가 (개수 증가 확인)
+    model.add_furniture(sample_furniture)
+    assert model.rowCount() == 1  # 여전히 1행 (같은 가구)
+    assert model.item(0, 12).text() == "2"  # 개수가 2로 증가
+    
+    # 총계 계산 테스트
+    assert model.get_total_count() == 2
+    assert model.get_total_price() == 200  # 100 * 2
+    
+    # 다른 가구 추가
+    another_furniture = Furniture(
+        id='2', brand='AnotherBrand', name='Test Table', image_filename='table.png', price=200,
+        type='Table', description='Another Description', link='http://example2.com',
+        color='White', locations=['Dining Room'], styles=['Classic'],
+        width=120, depth=80, height=75, seat_height=None, author='AnotherAuthor'
+    )
+    
+    model.add_furniture(another_furniture)
+    assert model.rowCount() == 2  # 이제 2행
+    
+    # 총계 다시 확인
+    assert model.get_total_count() == 3  # 의자 2개 + 테이블 1개
+    assert model.get_total_price() == 400  # (100 * 2) + (200 * 1)
+    
+    # 초기화 테스트
     model.clear_furniture()
     assert model.rowCount() == 0
-    assert len(model.furniture_count) == 0
+    assert model.get_total_count() == 0
+    assert model.get_total_price() == 0

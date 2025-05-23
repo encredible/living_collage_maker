@@ -367,8 +367,8 @@ class SelectedFurnitureTableModel(QStandardItemModel):
     def __init__(self):
         super().__init__()
         self.setHorizontalHeaderLabels([
-            "이름", "브랜드", "타입", "가격", "개수", "총 가격", "색상", 
-            "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자"
+            "이름", "브랜드", "타입", "가격", "색상", 
+            "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자", "개수"
         ])
         self.furniture_count = {}  # 가구별 개수 저장
     
@@ -385,50 +385,70 @@ class SelectedFurnitureTableModel(QStandardItemModel):
         self.furniture_count.clear()
         self.clear()
         self.setHorizontalHeaderLabels([
-            "이름", "브랜드", "타입", "가격", "개수", "총 가격", "색상", 
-            "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자"
+            "이름", "브랜드", "타입", "가격", "색상", 
+            "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자", "개수"
         ])
-
+    
     def refresh_model(self):
-        """모델을 새로고침합니다."""
         self.clear()
         self.setHorizontalHeaderLabels([
-            "이름", "브랜드", "타입", "가격", "개수", "총 가격", "색상", 
-            "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자"
+            "이름", "브랜드", "타입", "가격", "색상", 
+            "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자", "개수"
         ])
         
-        for item_info in self.furniture_count.values():
-            furniture = item_info['furniture']
-            count = item_info['count']
-            total_price = furniture.price * count
+        # 가구별로 행 추가
+        for furniture_info in self.furniture_count.values():
+            furniture = furniture_info['furniture']
+            count = furniture_info['count']
             
-            # 크기 정보 조합
-            size_info = f"{furniture.width}×{furniture.depth}×{furniture.height}mm" if furniture.width > 0 or furniture.depth > 0 or furniture.height > 0 else "정보없음"
+            # 각 컬럼에 맞는 데이터 생성 (13개 컬럼)
+            row_data = [
+                furniture.name or "",                                    # 이름
+                furniture.brand or "",                                   # 브랜드
+                furniture.type or "",                                    # 타입
+                f"₩{furniture.price:,}" if furniture.price else "",      # 가격
+                furniture.color or "",                                   # 색상
+                ", ".join(furniture.locations) if furniture.locations else "",  # 위치
+                ", ".join(furniture.styles) if furniture.styles else "",        # 스타일
+                self._format_size(furniture.width, furniture.depth, furniture.height),  # 크기
+                f"{furniture.seat_height}mm" if furniture.seat_height else "",   # 좌석높이
+                self._truncate_text(furniture.description or "", 50),    # 설명
+                furniture.link or "",                                    # 링크
+                furniture.author or "",                                  # 작성자
+                str(count)                                              # 개수
+            ]
             
-            # 좌석 높이 정보
-            seat_height_info = f"{furniture.seat_height}mm" if furniture.seat_height is not None else "해당없음"
+            # QStandardItem 리스트 생성 및 추가
+            items = [QStandardItem(str(data)) for data in row_data]
             
-            # 설명 길이 제한 (너무 길면 잘라내기)
-            description = furniture.description[:50] + "..." if len(furniture.description) > 50 else furniture.description
+            # 모든 아이템을 편집 불가능하게 설정
+            for item in items:
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             
-            # 각 컬럼 아이템 생성
-            name_item = QStandardItem(furniture.name)
-            brand_item = QStandardItem(furniture.brand)
-            type_item = QStandardItem(furniture.type)
-            price_item = QStandardItem(f"₩{furniture.price:,}")
-            count_item = QStandardItem(str(count))
-            total_price_item = QStandardItem(f"₩{total_price:,}")
-            color_item = QStandardItem(furniture.color)
-            locations_item = QStandardItem(", ".join(furniture.locations))
-            styles_item = QStandardItem(", ".join(furniture.styles))
-            size_item = QStandardItem(size_info)
-            seat_height_item = QStandardItem(seat_height_info)
-            description_item = QStandardItem(description)
-            link_item = QStandardItem(furniture.link)
-            author_item = QStandardItem(furniture.author)
-            
-            self.appendRow([
-                name_item, brand_item, type_item, price_item, count_item, total_price_item,
-                color_item, locations_item, styles_item, size_item, seat_height_item,
-                description_item, link_item, author_item
-            ]) 
+            self.appendRow(items)
+    
+    def _format_size(self, width, depth, height):
+        """크기 정보를 포맷팅합니다."""
+        if width and depth and height:
+            return f"{width}×{depth}×{height}mm"
+        return ""
+    
+    def _truncate_text(self, text, max_length):
+        """텍스트를 지정된 길이로 자릅니다."""
+        if len(text) > max_length:
+            return text[:max_length] + "..."
+        return text
+    
+    def get_total_price(self):
+        """전체 가구의 총 가격을 계산합니다."""
+        total = 0
+        for furniture_info in self.furniture_count.values():
+            furniture = furniture_info['furniture']
+            count = furniture_info['count']
+            if furniture.price:
+                total += furniture.price * count
+        return total
+    
+    def get_total_count(self):
+        """전체 가구의 총 개수를 계산합니다."""
+        return sum(info['count'] for info in self.furniture_count.values()) 
