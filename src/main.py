@@ -7,7 +7,8 @@ from PyQt6.QtWidgets import (QApplication, QHBoxLayout, QMainWindow, QSplitter,
                              QWidget)
 
 from src.ui.canvas import Canvas
-from src.ui.panels import BottomPanel, ExplorerPanel
+from src.ui.panels.bottom_panel import BottomPanel
+from src.ui.panels.explorer_panel import ExplorerPanel
 
 
 class MainWindow(QMainWindow):

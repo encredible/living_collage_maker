@@ -7,7 +7,7 @@ from PyQt6.QtGui import QDropEvent, QDragEnterEvent, QDragMoveEvent, QPixmap, QM
 
 from src.models.furniture import Furniture
 from src.ui.canvas import Canvas, FurnitureItem
-from src.ui.panels import BottomPanel
+from src.ui.panels.bottom_panel import BottomPanel
 
 
 @pytest.fixture
