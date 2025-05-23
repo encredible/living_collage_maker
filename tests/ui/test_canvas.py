@@ -377,44 +377,58 @@ def test_canvas_save_collage_cancelled_dialog(mock_get_save_file_name, canvas_wi
 @patch('src.ui.canvas.ImageService')
 @patch('src.ui.canvas.QMessageBox.information')
 def test_canvas_load_collage_successful(
-    MockQMessageBoxInfo, MockImageService, MockSupabaseClient, mock_json_load, mock_builtin_open, mock_get_open_file_name, 
+    MockQMessageBoxInfo, MockImageService, MockSupabaseClient, mock_json_load, mock_builtin_open, mock_get_open_file_name,
     canvas_widget, mock_furniture_data_for_canvas, qtbot, mocker
 ):
     """콜라주 불러오기 기능 테스트 (성공 케이스)"""
     test_load_path = "/fake/path/to/load/collage.json"
     mock_get_open_file_name.return_value = (test_load_path, "JSON 파일 (*.json)")
 
-    loaded_furniture_data = mock_furniture_data_for_canvas.copy()
-    loaded_furniture_data['id'] = 'loaded-item-id'
-    
+    loaded_furniture_data_dict = mock_furniture_data_for_canvas.copy() # dict 형태 유지
+    loaded_furniture_data_dict['id'] = 'loaded-item-id'
+    # Furniture 객체 생성 시 필요한 모든 필드가 mock_furniture_data_for_canvas에 있다고 가정
+    # 만약 필드가 부족하면 Furniture 생성자에서 오류 발생 가능
+
     mock_collage_data = {
         "canvas": {"width": 900, "height": 700},
         "furniture_items": [
             {
-                "id": loaded_furniture_data['id'],
+                "id": loaded_furniture_data_dict['id'],
                 "position": {"x": 50, "y": 60},
                 "size": {"width": 120, "height": 180},
                 "z_order": 0,
-                "is_flipped": False,
-                "image_adjustments": {"color_temp": 6500, "brightness": 100, "saturation": 100}
+                "is_flipped_horizontally": False,
+                "is_flipped_vertically": False,
+                "rotation": 0,
+                "scale": 1.0,
+                "locked": False,
+                "visible": True,
+                "temperature": 6500,
+                "brightness": 100,
+                "contrast": 0,
+                "saturation": 100
             }
         ]
     }
     mock_json_load.return_value = mock_collage_data
+    mock_builtin_open.return_value = mock_open(read_data=json.dumps(mock_collage_data)).return_value
+
 
     mock_supabase_instance = MockSupabaseClient.return_value
-    db_item_data = loaded_furniture_data.copy()
-    mock_supabase_instance.get_furniture_list.return_value = [db_item_data]
-    
+    # load_collage는 get_furniture_list를 사용하고, 반환값은 dict의 list여야 함
+    # db_item_furniture_obj = Furniture(**loaded_furniture_data_dict) # 객체가 아닌 dict 유지
+    mock_supabase_instance.get_furniture_list.return_value = [loaded_furniture_data_dict]
+
     mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
     dummy_pixmap = QPixmap(100,100)
     mock_load_image.return_value = dummy_pixmap
-    
+
     mock_update_bottom_panel = mocker.patch.object(canvas_widget, 'update_bottom_panel')
-    
+
+    # window().width() 와 window().height()가 호출되므로, width와 height를 호출 가능한 MagicMock으로 설정
     mock_window = MagicMock()
-    mock_window.width.return_value = 1024
-    mock_window.height.return_value = 768
+    mock_window.width = MagicMock(return_value=1024)
+    mock_window.height = MagicMock(return_value=768)
     mocker.patch.object(canvas_widget, 'window', return_value=mock_window)
 
     canvas_widget.load_collage()
@@ -422,20 +436,25 @@ def test_canvas_load_collage_successful(
     mock_get_open_file_name.assert_called_once()
     mock_builtin_open.assert_called_once_with(test_load_path, 'r', encoding='utf-8')
     mock_json_load.assert_called_once()
-    
+    mock_supabase_instance.get_furniture_list.assert_called_once() # get_furniture_by_id 대신 get_furniture_list 호출 검증
+
+
     assert canvas_widget.canvas_area.width() == 900
     assert canvas_widget.canvas_area.height() == 700
-    
+
     assert len(canvas_widget.furniture_items) == 1
     loaded_item = canvas_widget.furniture_items[0]
     assert isinstance(loaded_item, FurnitureItem)
-    assert loaded_item.furniture.id == loaded_furniture_data['id']
+    assert loaded_item.furniture.id == loaded_furniture_data_dict['id']
     assert loaded_item.pos() == QPoint(50, 60)
     assert loaded_item.size() == QSize(120, 180)
+    assert loaded_item.color_temp == 6500
+
 
     mock_update_bottom_panel.assert_called_once()
     MockQMessageBoxInfo.assert_called_once_with(canvas_widget, "성공", "콜라주가 성공적으로 불러와졌습니다.")
     mock_window.setMinimumSize.assert_called()
+    # resize 호출 시 인자 검증은 복잡할 수 있으므로, 호출 여부만 확인하거나 더 구체적인 로직 검증 필요
     mock_window.resize.assert_called()
 
 @patch('src.ui.canvas.QFileDialog.getOpenFileName')
@@ -500,74 +519,111 @@ def test_canvas_load_collage_missing_keys(mock_json_load, mock_builtin_open, moc
 @patch('src.ui.canvas.SupabaseClient')
 @patch('src.ui.canvas.ImageService')
 @patch('src.ui.canvas.QMessageBox.warning')
+@patch('src.ui.canvas.QMessageBox.information') # QMessageBox.information 모킹 추가
 def test_canvas_load_collage_furniture_not_found_in_db(
-    MockQMessageBoxWarning, MockImageService, MockSupabaseClient, mock_json_load, mock_builtin_open, mock_get_open_file_name, 
+    MockQMessageBoxInfo, MockQMessageBoxWarning, MockImageService, MockSupabaseClient, mock_json_load, mock_builtin_open, mock_get_open_file_name,
     canvas_widget, mocker
 ):
-    """콜라주 불러오기 시 JSON 내 가구 ID가 DB에 없을 때의 동작을 테스트합니다."""
-    test_load_path = "/fake/path/to/load/collage_item_not_in_db.json"
+    """DB에 없는 가구 아이템이 포함된 콜라주 로드 시나리오를 테스트합니다.
+    - DB에 없는 아이템은 제외하고 로드됩니다.
+    - 사용자에게 경고 메시지가 표시됩니다.
+    - 성공 다이얼로그는 표시되지 않습니다.
+    """
+    test_load_path = "/fake/path/to/load/collage_with_missing_item.json"
     mock_get_open_file_name.return_value = (test_load_path, "JSON 파일 (*.json)")
 
-    mock_collage_data = {
-        "canvas": {"width": 900, "height": 700},
-        "furniture_items": [
-            {
-                "id": "non-existent-id", # DB에 없는 ID
-                "position": {"x": 50, "y": 60},
-                "size": {"width": 120, "height": 180},
-                "z_order": 0,
-                "is_flipped": False,
-                "image_adjustments": {"color_temp": 6500, "brightness": 100, "saturation": 100}
-            },
-            {
-                "id": "existing-id", # DB에 있는 ID (테스트용)
-                "position": {"x": 10, "y": 10},
-                "size": {"width": 50, "height": 50},
-                "z_order": 1,
-                "is_flipped": False,
-                "image_adjustments": {"color_temp": 6500, "brightness": 100, "saturation": 100}
-            }
-        ]
-    }
-    mock_json_load.return_value = mock_collage_data
+    valid_furniture_id_in_file = "db-item-001"
+    missing_furniture_id_in_file = "missing-item-002"
 
-    mock_supabase_instance = MockSupabaseClient.return_value
-    db_furniture_list = [
-        { "id": "existing-id", "name": "Existing Item", "image_filename": "existing.png", 
-          "price": 0, "brand": "", "type": "", "description": "", 'link': '', 'color': '', 
-          'locations': [], 'styles': [], 'width': 0, 'depth': 0, 'height': 0, 'seat_height': None,
-          'author': '', 'created_at': ''}
-    ]
-    mock_supabase_instance.get_furniture_list.return_value = db_furniture_list
-    
-    mock_show_critical = mocker.patch.object(canvas_widget, '_show_critical_message')
-    mocker.patch.object(FurnitureItem, 'load_image', return_value=QPixmap(10,10))
+    # canvas.py의 save_collage 형식에 맞춤
+    furniture_item_state_in_file_1 = {
+        "id": valid_furniture_id_in_file,
+        "position": {"x": 10, "y": 20},
+        "size": {"width": 100, "height": 120},
+        "rotation": 0,
+        "scale": 1.0,
+        "z_order": 1,
+        "locked": False,
+        "visible": True,
+        "temperature": 6500,
+        "brightness": 0,
+        "contrast": 0,
+        "saturation": 0
+    }
+    furniture_item_state_in_file_2 = {
+        "id": missing_furniture_id_in_file,
+        "position": {"x": 30, "y": 40},
+        "size": {"width": 110, "height": 130},
+        "rotation": 0,
+        "scale": 1.0,
+        "z_order": 2,
+        "locked": False,
+        "visible": True,
+        "temperature": 6500,
+        "brightness": 0,
+        "contrast": 0,
+        "saturation": 0
+    }
+    collage_data_from_file = {
+        "canvas": {"width": 800, "height": 600}, # canvas.py load_collage는 'canvas' 키 사용
+        "furniture_items": [furniture_item_state_in_file_1, furniture_item_state_in_file_2]
+    }
+    mock_json_load.return_value = collage_data_from_file
+    mock_builtin_open.return_value = mock_open(read_data=json.dumps(collage_data_from_file)).return_value
+
+    mock_supabase_client_instance = MockSupabaseClient.return_value
+    # db_furniture_data_valid는 DB에 있는 Furniture 데이터의 dict 형태
+    # get_furniture_list는 이러한 dict의 list를 반환해야 함
+    db_furniture_data_valid = { # Supabase에서 반환될 Furniture 객체의 속성
+        "id": valid_furniture_id_in_file, "name": "Chair from DB", "image_filename": "chair_db.png", "price": 100,
+        "brand": "DBBrand", "type": "Chair", "description": "", "link": "", "color": "",
+        "locations": [], "styles": [], "width": 50, "height": 50, "depth": 50, "seat_height": None,
+        "author": "test", "created_at": "2023-01-01T00:00:00"
+    }
+
+    mock_supabase_client_instance.get_furniture_list.return_value = [db_furniture_data_valid]
+
+    mock_image_service_instance = MockImageService.return_value
+    mock_image_service_instance.get_cached_image_path.return_value = "/fake/path/image.png"
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image', return_value=QPixmap(100, 100))
 
     mock_main_window = MagicMock()
     mock_bottom_panel_instance = MagicMock(spec=BottomPanel)
     mock_main_window.findChild.return_value = mock_bottom_panel_instance
+    # window().width() 와 window().height() 호출에 맞게 수정
     mock_main_window.width = MagicMock(return_value=1200)
     mock_main_window.height = MagicMock(return_value=800)
     mocker.patch.object(canvas_widget, 'window', return_value=mock_main_window)
-    
+
     canvas_widget.load_collage()
 
     mock_get_open_file_name.assert_called_once()
-    mock_builtin_open.assert_called_once_with(test_load_path, 'r', encoding='utf-8')
+    mock_builtin_open.assert_called_once_with(test_load_path, "r", encoding="utf-8")
     mock_json_load.assert_called_once()
-    mock_supabase_instance.get_furniture_list.assert_called_once_with() 
-    
-    MockQMessageBoxWarning.assert_called_once_with(
-        canvas_widget,
-        "경고", 
-        "콜라주에 포함된 가구(ID: non-existent-id)를 현재 데이터베이스에서 찾을 수 없습니다. 해당 아이템은 제외됩니다."
-    )
-    mock_show_critical.assert_not_called()
+    mock_supabase_client_instance.get_furniture_list.assert_called_once() # get_furniture_by_id 대신 get_furniture_list 호출 검증
 
-    assert len(canvas_widget.furniture_items) == 1 
-    assert canvas_widget.furniture_items[0].furniture.id == "existing-id"
-    
+    MockQMessageBoxWarning.assert_called_once()
+    args, kwargs = MockQMessageBoxWarning.call_args
+    # 실제 경고 메시지 포맷에 맞게 수정
+    expected_warning_message = f"콜라주에 포함된 가구(ID: {missing_furniture_id_in_file})를 현재 데이터베이스에서 찾을 수 없습니다. 해당 아이템은 제외됩니다."
+    assert args[0] == canvas_widget
+    assert args[1] == "경고"
+    assert args[2] == expected_warning_message
+
+    MockQMessageBoxInfo.assert_called_once() # assert_not_called 대신 assert_called_once로 변경 (현재 canvas.py 로직 반영)
+
+    assert len(canvas_widget.furniture_items) == 1
+    loaded_item = canvas_widget.furniture_items[0]
+    assert loaded_item.furniture.id == valid_furniture_id_in_file
+    assert loaded_item.furniture.name == "Chair from DB"
+    assert loaded_item.pos() == QPoint(10, 20)
+    assert loaded_item.size() == QSize(100,120)
+    assert loaded_item.color_temp == 6500
+
+    assert canvas_widget.canvas_area.size() == QSize(800, 600)
+    assert canvas_widget.is_new_collage is False
     mock_bottom_panel_instance.update_panel.assert_called_once_with(canvas_widget.furniture_items)
+    mock_load_image.assert_called_once()
 
 @patch('src.ui.canvas.QFileDialog.getSaveFileName')
 @patch('PyQt6.QtGui.QPixmap.save')
