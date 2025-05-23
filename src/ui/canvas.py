@@ -3,6 +3,7 @@ import json
 import os
 import time
 import weakref
+from typing import Union # typing.Union 임포트 추가
 
 from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, QThread, pyqtSignal, QSize, QBuffer, QIODevice
 from PyQt6.QtGui import (QPainter, QColor, QPen, QPixmap, QTransform, QImage, QBrush, QShortcut, QKeySequence, QGuiApplication)
@@ -30,14 +31,11 @@ class ImageProcessor(QThread):
         
     def run(self):
         """스레드 실행 메서드"""
-        # 작업 시작 전 중단 확인
         if self.should_stop:
             return
             
-        # 처리 시작 시간 기록
         start_time = time.time()
         
-        # 이미지 처리 수행
         result = ImageAdjuster.apply_effects(
             self.pixmap, 
             self.color_temp, 
@@ -45,19 +43,15 @@ class ImageProcessor(QThread):
             self.saturation
         )
         
-        # 종료 상태 확인
         if self.should_stop:
             return
             
-        # 처리 종료 시간 및 소요 시간 기록
         end_time = time.time()
         processing_time = (end_time - start_time) * 1000
         
-        # 로그 출력 (1ms 이상 소요된 경우만)
-        if processing_time > 1:
-            print(f"[ImageProcessor] 처리 시간: {processing_time:.2f}ms (크기: {self.pixmap.width()}x{self.pixmap.height()})")
+        if processing_time > 1: # 1ms 이상 소요 시 디버깅용 로그
+            print(f"[ImageProcessor] 처리 시간: {processing_time:.2f}ms (크기: {self.pixmap.width()}x{self.pixmap.height()})") # TODO: 로깅 라이브러리로 대체 고려
         
-        # 처리 완료 신호 발생
         self.finished.emit(result)
         
     def quit(self):
@@ -66,188 +60,140 @@ class ImageProcessor(QThread):
         super().quit()
 
 class ImageAdjuster:
-    """이미지 조정을 처리하는 클래스"""
+    """이미지 색온도, 밝기, 채도 조정을 처리하는 클래스"""
     
-    # 효과 캐시 (key: (픽셀맵 ID, 크기, 색온도, 밝기, 채도))
-    _effect_cache = {}
-    _cache_size = 50  # 최대 캐시 항목 수를 늘림
+    _effect_cache = {} # 효과 캐시 (key: (픽셀맵 ID, 크기, 색온도, 밝기, 채도))
+    _cache_size = 50
     
-    # 색온도, 밝기, 채도 조합에 따른 빠른 룩업 테이블
-    _temperature_lut = {}  # 색온도 룩업 테이블 (미리 계산)
-    _initialized = False
+    _temperature_lut = {}  # 색온도 룩업 테이블 (미리 계산된 값)
+    _initialized = False   # 초기화 여부 플래그
+    _use_numpy = True      # NumPy 벡터화 처리 사용 여부
     
-    # 처리 방식 선택
-    _use_numpy = True  # NumPy 벡터화 처리 사용 여부
-    
-    # 이미지 고유 ID 카운터
     _image_id_counter = 0
-    _image_id_map = weakref.WeakKeyDictionary()  # 픽셀맵 -> 고유 ID 매핑
+    _image_id_map = weakref.WeakKeyDictionary()  # QPixmap 객체 -> 고유 ID 매핑
     
     @staticmethod
     def initialize():
-        """이미지 조정 시스템을 초기화합니다."""
+        """이미지 조정 시스템을 초기화합니다 (룩업 테이블 생성, NumPy 사용 가능 여부 확인)."""
         if ImageAdjuster._initialized:
             return
         
-        # 룩업 테이블 초기화
         ImageAdjuster._init_temperature_lut()
         
-        # NumPy 사용 가능 여부 확인
         try:
             import numpy as np
-            test_array = np.array([1, 2, 3])
+            np.array([1, 2, 3]) # NumPy 사용 가능성 테스트
             ImageAdjuster._use_numpy = True
-            print("[ImageAdjuster] NumPy 벡터화 처리 사용 가능")
-        except Exception as e:
+        except Exception:
             ImageAdjuster._use_numpy = False
-            print(f"[ImageAdjuster] NumPy 사용 불가: {e}")
         
         ImageAdjuster._initialized = True
-        print("[ImageAdjuster] 시스템 초기화 완료")
     
     @staticmethod
     def _init_temperature_lut():
-        """색온도 변환을 위한 룩업 테이블을 초기화합니다."""
-        # 주요 색온도 값 미리 계산 (500K 단위로 더 세밀하게)
+        """색온도 변환을 위한 룩업 테이블 (LUT)을 미리 계산하여 초기화합니다."""
         temps = [2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500, 10000]
-        
         for temp in temps:
-            r_temp, g_temp, b_temp = ImageAdjuster.calculate_temperature_rgb(temp)
-            ImageAdjuster._temperature_lut[temp] = (r_temp, g_temp, b_temp)
-            
-        print(f"[ImageAdjuster] 색온도 룩업 테이블 초기화 완료: {len(ImageAdjuster._temperature_lut)} 항목")
+            ImageAdjuster._temperature_lut[temp] = ImageAdjuster.calculate_temperature_rgb(temp)
     
     @staticmethod
     def get_temperature_rgb(temperature):
-        """가장 가까운 사전 계산된 색온도 값을 반환합니다."""
-        # 정확히 일치하는 값이 있으면 바로 반환
+        """주어진 색온도에 가장 가까운, 사전 계산된 RGB 계수를 반환하거나 직접 계산합니다."""
         if temperature in ImageAdjuster._temperature_lut:
             return ImageAdjuster._temperature_lut[temperature]
             
-        # 가장 가까운 값 찾기
         closest_temp = min(ImageAdjuster._temperature_lut.keys(), key=lambda x: abs(x - temperature))
         
-        # 1000K 이내 차이면 사전 계산 값 사용
-        if abs(closest_temp - temperature) <= 1000:
+        if abs(closest_temp - temperature) <= 1000: # 1000K 이내 차이면 LUT 값 사용
             return ImageAdjuster._temperature_lut[closest_temp]
             
-        # 그렇지 않으면 직접 계산
-        return ImageAdjuster.calculate_temperature_rgb(temperature)
+        return ImageAdjuster.calculate_temperature_rgb(temperature) # 그 외 직접 계산
     
     @staticmethod
     def apply_effects(pixmap, color_temp, brightness, saturation):
-        """이미지에 색온도, 밝기, 채도 효과를 적용합니다."""
+        """이미지에 색온도, 밝기, 채도 효과를 적용합니다. NumPy 사용 가능 시 벡터화 처리합니다."""
         if pixmap is None or pixmap.isNull():
-            print("[ImageAdjuster] 입력 이미지가 없습니다.")
+            # print("[ImageAdjuster] 입력 이미지가 없습니다.") # TODO: 로깅 고려
             return QPixmap()
 
         try:
-            # 픽셀맵에 고유 ID 할당 (객체 ID 대신 고유 ID 사용)
             if pixmap not in ImageAdjuster._image_id_map:
                 ImageAdjuster._image_id_counter += 1
                 ImageAdjuster._image_id_map[pixmap] = ImageAdjuster._image_id_counter
-                
             image_id = ImageAdjuster._image_id_map[pixmap]
             
-            # 캐시 키 생성 (이미지 고유 ID, 이미지 크기, 색온도, 밝기, 채도)
-            # 크기별로 다른 캐시 키 사용 (크기별 캐싱)
             size_key = f"{pixmap.width()}x{pixmap.height()}"
             cache_key = (image_id, size_key, round(color_temp), round(brightness), round(saturation))
             
-            # 캐시에 결과가 있으면 복사본 반환 (참조 공유 방지)
             if cache_key in ImageAdjuster._effect_cache:
-                cached_pixmap = ImageAdjuster._effect_cache[cache_key]
-                # 깊은 복사 수행하여 반환 (서로 다른 객체가 되도록)
-                return cached_pixmap.copy()
+                return ImageAdjuster._effect_cache[cache_key].copy() # 캐시된 결과의 복사본 반환
             
-            # 이미지 복사본 생성 (원본 변경 방지)
-            pixmap_copy = pixmap.copy()
+            pixmap_copy = pixmap.copy() # 원본 변경 방지를 위해 복사본 사용
             
-            # NumPy 처리 사용
             if ImageAdjuster._use_numpy:
                 result_pixmap = ImageAdjuster.apply_effects_numpy(
-                    pixmap_copy,
-                    color_temp,
-                    brightness,
-                    saturation
+                    pixmap_copy, color_temp, brightness, saturation
                 )
             else:
-                # 기존 방식으로 처리
-                # 이미지를 QImage로 변환
+                # NumPy 미사용 시 QImage 기반 픽셀 단위 처리
                 image = pixmap_copy.toImage()
+                width, height = image.width(), image.height()
+                result_image = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied)
                 
-                # 결과 이미지 생성 (미리 메모리 할당)
-                width = image.width()
-                height = image.height()
-                result = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied)
-                
-                # 색온도에 따른 RGB 계수 계산
                 r_temp, g_temp, b_temp = ImageAdjuster.get_temperature_rgb(color_temp)
                 brightness_factor = brightness / 100.0
                 saturation_factor = saturation / 100.0
                 
-                # 룩업 테이블 생성 (256개 값에 대해 미리 계산)
-                lut = {}
-                for v in range(256):
-                    # 색온도와 밝기 미리 적용
-                    r = min(255, max(0, int(v * r_temp * brightness_factor)))
-                    g = min(255, max(0, int(v * g_temp * brightness_factor)))
-                    b = min(255, max(0, int(v * b_temp * brightness_factor)))
-                    
-                    # 각 색상값을 키로 미리 계산
-                    lut[v] = (r, g, b)
+                # 픽셀 값 변환 LUT 생성 (색온도, 밝기 선적용)
+                pixel_transform_lut = {
+                    v_in: (
+                        min(255, max(0, int(v_in * r_temp * brightness_factor))),
+                        min(255, max(0, int(v_in * g_temp * brightness_factor))),
+                        min(255, max(0, int(v_in * b_temp * brightness_factor)))
+                    ) for v_in in range(256)
+                }
                 
-                # 픽셀 건너뛰기 단계 설정 (더 큰 값으로 설정)
-                pixel_step = 2 if max(width, height) > 200 else 1
+                pixel_step = 2 if max(width, height) > 200 else 1 # 성능 최적화를 위한 픽셀 스킵
                 
-                # 성능 향상을 위해 더 큰 스텝으로 처리
                 for y in range(0, height, pixel_step):
                     for x in range(0, width, pixel_step):
-                        # 픽셀 색상 가져오기
-                        pixel = image.pixelColor(x, y)
-                        alpha = pixel.alpha()
+                        px_color = image.pixelColor(x, y)
+                        alpha = px_color.alpha()
                         
-                        # 룩업 테이블에서 값 가져오기
-                        r, g, b = lut[pixel.red()], lut[pixel.green()], lut[pixel.blue()]
-                        r, g, b = r[0], g[1], b[2]  # 튜플에서 값 추출
+                        r_adj, g_adj, b_adj = pixel_transform_lut[px_color.red()], \
+                                              pixel_transform_lut[px_color.green()], \
+                                              pixel_transform_lut[px_color.blue()]
                         
-                        # 채도 적용 (그레이스케일 값 계산)
-                        gray = int(0.299 * r + 0.587 * g + 0.114 * b)
-                        
+                        r, g, b = r_adj[0], g_adj[1], b_adj[2] # 값 추출 (여기서 이미 (r,g,b) 튜플이므로 불필요할 수 있음)
+                                                
                         # 채도 적용
+                        gray = int(0.299 * r + 0.587 * g + 0.114 * b)
                         r = min(255, max(0, int(gray + (r - gray) * saturation_factor)))
                         g = min(255, max(0, int(gray + (g - gray) * saturation_factor)))
                         b = min(255, max(0, int(gray + (b - gray) * saturation_factor)))
                         
-                        # 새로운 색상 생성
-                        color = QColor(r, g, b, alpha)
+                        final_color = QColor(r, g, b, alpha)
                         
-                        # 주변 픽셀도 같은 색으로 채우기
-                        for py in range(y, min(y + pixel_step, height)):
-                            for px in range(x, min(x + pixel_step, width)):
-                                result.setPixelColor(px, py, color)
+                        for py_off in range(pixel_step): # 스킵된 픽셀 채우기
+                            for px_off in range(pixel_step):
+                                if (y + py_off) < height and (x + px_off) < width:
+                                    result_image.setPixelColor(x + px_off, y + py_off, final_color)
                 
-                # 처리된 이미지로 QPixmap 생성
-                result_pixmap = QPixmap.fromImage(result)
+                result_pixmap = QPixmap.fromImage(result_image)
             
-            # 결과를 새로운 객체로 깊은 복사
-            final_result = result_pixmap.copy()
+            final_result = result_pixmap.copy() # 최종 결과도 깊은 복사하여 캐시 및 반환
             
-            # 결과 캐싱
-            if len(ImageAdjuster._effect_cache) >= ImageAdjuster._cache_size:
-                # 캐시가 꽉 찼으면 첫 번째 항목 제거
+            if len(ImageAdjuster._effect_cache) >= ImageAdjuster._cache_size: # 캐시 관리
                 ImageAdjuster._effect_cache.pop(next(iter(ImageAdjuster._effect_cache)))
-            
-            # 결과 캐싱
             ImageAdjuster._effect_cache[cache_key] = final_result.copy()
             
             return final_result
             
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"[ImageAdjuster] 이미지 처리 중 오류 발생: {e}")
-            return pixmap.copy()  # 오류 발생 시 원본의 복사본 반환
+            # import traceback # 개발 시 상세 오류 확인용
+            # traceback.print_exc()
+            # print(f"[ImageAdjuster] 이미지 처리 중 오류 발생: {e}") # TODO: 로깅 라이브러리로 대체 고려
+            return pixmap.copy() # 오류 발생 시 원본의 복사본 반환
             
     @staticmethod
     def apply_effects_numpy(pixmap, color_temp, brightness, saturation):
@@ -255,62 +201,47 @@ class ImageAdjuster:
         try:
             import numpy as np
             
-            # QImage로 변환 (Deep Copy 생성)
-            image = pixmap.toImage()
-            
-            # 이미지 포맷 저장 (원본 포맷 유지)
-            original_format = image.format()
-            
-            # 이미지 크기
+            image = pixmap.toImage() # QImage로 변환 (Deep Copy)
+            original_format = image.format() # 원본 포맷 유지
             width = image.width()
             height = image.height()
             
-            # ARGB 형식으로 NumPy 배열 생성
-            ptr = image.constBits()  # constBits 사용 (읽기 전용)
+            # QImage의 constBits()를 사용하여 메모리 직접 접근 후 NumPy 배열로 변환 (읽기 전용)
+            ptr = image.constBits()
             ptr.setsize(image.sizeInBytes())
-            
-            # 깊은 복사본 생성 (변경 가능하도록)
+            # 변경 가능한 복사본 생성
             arr = np.array(ptr).reshape(height, width, 4).copy()
             
-            # 알파 채널 분리 (투명도)
-            alpha = arr[:, :, 3].copy()
+            alpha = arr[:, :, 3].copy() # 알파 채널
+            transparent_mask = (alpha == 0) # 완전 투명 픽셀 마스크
+            semitransparent_mask = np.logical_and(alpha > 0, alpha < 255) # 반투명 픽셀 마스크
             
-            # 완전 투명한 픽셀 마스크 생성 (알파값이 0인 픽셀)
-            transparent_mask = (alpha == 0)
-            
-            # 반투명 픽셀 마스크 생성 (0 < 알파 < 255)
-            semitransparent_mask = np.logical_and(alpha > 0, alpha < 255)
-            
-            # BGRA -> RGB 변환 (QImage에서는 BGRA 순서로 저장됨)
+            # QImage는 BGRA 순서이므로, RGB 채널 추출
             r = arr[:, :, 2].astype(np.float32)
             g = arr[:, :, 1].astype(np.float32)
             b = arr[:, :, 0].astype(np.float32)
             
-            # 색온도 RGB 계수 적용
             r_temp, g_temp, b_temp = ImageAdjuster.get_temperature_rgb(color_temp)
             brightness_factor = brightness / 100.0
             saturation_factor = saturation / 100.0
             
-            # 완전히 투명한 픽셀의 색상값 저장
-            # 나중에 복원하기 위함 (투명 픽셀의 색상은 무시되어야 함)
+            # 완전 투명 픽셀의 원본 RGB 값 저장 (색상 처리 후 복원용)
             r_transparent = r[transparent_mask].copy() if np.any(transparent_mask) else None
             g_transparent = g[transparent_mask].copy() if np.any(transparent_mask) else None
             b_transparent = b[transparent_mask].copy() if np.any(transparent_mask) else None
             
-            # 색온도와 밝기 적용
+            # 색온도 및 밝기 적용
             r *= r_temp * brightness_factor
             g *= g_temp * brightness_factor
             b *= b_temp * brightness_factor
             
             # 채도 적용
             gray = 0.299 * r + 0.587 * g + 0.114 * b
-            
-            # 채도 적용 벡터화 처리
             r = gray + (r - gray) * saturation_factor
             g = gray + (g - gray) * saturation_factor
             b = gray + (b - gray) * saturation_factor
             
-            # 값 범위 제한 (0-255)
+            # 값 범위를 [0, 255]로 제한하고 uint8로 변환
             r = np.clip(r, 0, 255).astype(np.uint8)
             g = np.clip(g, 0, 255).astype(np.uint8)
             b = np.clip(b, 0, 255).astype(np.uint8)
@@ -384,58 +315,66 @@ class FurnitureItem(QWidget):
         self.image_service = ImageService()
         self.supabase = SupabaseClient()
         
-        # 이미지 조정 시스템 초기화
         if not ImageAdjuster._initialized:
             ImageAdjuster.initialize()
         
-        # 이미지 조정 관련 속성 추가 (load_image 전에 None으로 초기화)
-        self.pixmap = None # pixmap도 None으로 초기화
-        self.original_pixmap = None  # 원본 이미지 저장
-        self.original_ratio = 0.0 # 원본 이미지 비율 추가
-        self.maintain_aspect_ratio_on_press = False # 리사이즈 시작 시 Shift 키 상태 저장
-        self.color_temp = 6500  # 기본 색온도 (K)
-        self.brightness = 100  # 기본 밝기 (%)
-        self.saturation = 100  # 기본 채도 (%)
-        self.is_flipped = False
-        self.maintain_aspect_ratio = False # 속성 초기화 추가
-        self.adjust_dialog = None  # 조정 다이얼로그
+        # 이미지 조정 관련 속성
+        self.pixmap: Union[QPixmap, None] = None # QPixmap | None -> Union[QPixmap, None]
+        self.original_pixmap: Union[QPixmap, None] = None # QPixmap | None -> Union[QPixmap, None]
+        self.original_ratio: float = 1.0
+        self.maintain_aspect_ratio_on_press: bool = False # 리사이즈 시작 시 Shift 키 상태
+        self.color_temp: int = 6500
+        self.brightness: int = 100
+        self.saturation: int = 100
+        self.is_flipped: bool = False # 좌우 반전 상태
+        self.maintain_aspect_ratio: bool = False # 현재 비율 유지 상태
+        self.adjust_dialog = None # 이미지 조정 다이얼로그 참조
 
-        # 이미지 로드 (pixmap과 original_pixmap 설정)
-        returned_original_pixmap = self.load_image() 
-        if returned_original_pixmap and not returned_original_pixmap.isNull():
-            self.original_pixmap = returned_original_pixmap.copy() # 반환된 객체의 복사본을 저장
-            if self.original_pixmap.height() > 0: # 0으로 나누기 방지
-                self.original_ratio = self.original_pixmap.width() / self.original_pixmap.height()
-            else:
-                self.original_ratio = 1.0 # 기본값 또는 에러 처리
-            print(f"[FurnitureItem __init__] load_image로부터 original_pixmap 할당: isNull={self.original_pixmap.isNull()}, id={id(self.original_pixmap)}, ratio={self.original_ratio}")
+        # 이미지 로드 및 관련 속성 초기화
+        loaded_original_candidate = self.load_image()
+        if loaded_original_candidate and not loaded_original_candidate.isNull():
+            self.original_pixmap = loaded_original_candidate.copy()
         else:
-            print(f"[FurnitureItem __init__] load_image가 유효한 original_pixmap을 반환하지 못함.")
-            if self.pixmap is None or self.pixmap.isNull(): 
-                print(f"[FurnitureItem __init__] self.pixmap이 여전히 설정되지 않음. 기본 에러 이미지 생성.")
-                self.pixmap = QPixmap(200, 200)
+            # load_image가 유효한 pixmap을 반환하지 못한 경우 (오류 이미지 등)
+            if self.pixmap is None or self.pixmap.isNull(): # load_image 내부에서 self.pixmap이 설정되었을 수 있음
+                self.pixmap = QPixmap(200, 200) # 기본 대체 이미지
                 self.pixmap.fill(QColor("#D3D3D3"))
                 painter = QPainter(self.pixmap)
-                painter.drawText(self.pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "기본 이미지")
+                painter.drawText(self.pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "이미지 없음")
                 painter.end()
+            self.original_pixmap = self.pixmap.copy() # 현재 pixmap (에러 이미지일 수 있음)을 원본 기준으로 사용
+        
+        if self.original_pixmap and self.original_pixmap.height() > 0:
+            self.original_ratio = self.original_pixmap.width() / self.original_pixmap.height()
+        else:
+            self.original_ratio = 1.0 # 기본 비율 또는 오류 시
 
-            self.original_pixmap = self.pixmap.copy() # 현재 pixmap을 original_pixmap으로 사용 (최후의 수단)
-            print(f"[FurnitureItem __init__] 현재 pixmap을 original_pixmap으로 강제 할당: isNull={self.original_pixmap.isNull()}, id={id(self.original_pixmap)}")
-
-        # 드래그 앤 드롭 설정
+        # 초기 위젯 크기 설정 (self.pixmap 기준)
+        if self.pixmap and not self.pixmap.isNull():
+            current_pixmap_width = self.pixmap.width()
+            current_pixmap_height = self.pixmap.height()
+            ratio_for_initial_size = 1.0
+            if current_pixmap_height > 0:
+                ratio_for_initial_size = current_pixmap_width / current_pixmap_height
+            
+            initial_width = 200 
+            initial_height = int(initial_width / ratio_for_initial_size) if ratio_for_initial_size > 0 else initial_width
+            self.setFixedSize(initial_width, initial_height)
+        else: # self.pixmap이 로드되지 않은 극단적 경우
+            self.setFixedSize(200,200)
+        
         self.setMouseTracking(True)
         self.is_resizing = False
-        self.resize_handle = QRect(self.width() - 20, self.height() - 20, 20, 20)
+        self.resize_handle = QRect() # resizeEvent에서 실제 값으로 업데이트됨
+        self.update_resize_handle() # 명시적 초기 호출
         
-        # 슬라이더 디바운싱을 위한 타이머
+        # 이미지 조정 다이얼로그의 슬라이더 값 변경 디바운싱용 타이머
         self.update_timer = QTimer(self)
         self.update_timer.setSingleShot(True)
-        self.update_timer.setInterval(100)  # 100ms 딜레이
+        self.update_timer.setInterval(100)
         self.update_timer.timeout.connect(self.apply_pending_update)
         
-        # 선택 상태 추가
         self.is_selected = False
-        print(f"[FurnitureItem __init__ 끝] original_pixmap is None: {self.original_pixmap is None}, id: {id(self.original_pixmap) if self.original_pixmap else 'N/A'}") # __init__ 끝에서 상태 확인
     
     def update_resize_handle(self):
         """크기가 변경될 때 리사이즈 핸들 위치를 업데이트합니다."""
@@ -446,14 +385,16 @@ class FurnitureItem(QWidget):
         super().resizeEvent(event)
         self.update_resize_handle()
     
-    def load_image(self):
-        """가구 이미지를 로드하고, 원본으로 사용될 QPixmap 객체를 반환합니다."""
-        loaded_pixmap_for_original = None # original_pixmap에 할당될 QPixmap을 임시 저장
+    def load_image(self) -> Union[QPixmap, None]: # QPixmap | None -> Union[QPixmap, None]
+        """가구 이미지를 Supabase에서 가져와 ImageService를 통해 로드합니다.
+           성공 시 QPixmap 객체를, 실패 시 None 또는 에러가 표시된 QPixmap을 반환 (내부적으로 self.pixmap도 설정).
+           반환된 QPixmap은 __init__에서 self.original_pixmap의 후보가 됩니다.
+        """
+        pixmap_candidate_for_original = None
         try:
             image_data = self.supabase.get_furniture_image(self.furniture.image_filename)
             downloaded_pixmap = self.image_service.download_and_cache_image(
-                image_data, 
-                self.furniture.image_filename
+                image_data, self.furniture.image_filename
             )
 
             if downloaded_pixmap and not downloaded_pixmap.isNull():

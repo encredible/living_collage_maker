@@ -19,12 +19,8 @@ class ImageService:
     def get_cached_image_path(self, image_filename):
         """캐시된 이미지의 경로를 반환합니다."""
         name, ext = os.path.splitext(image_filename)
-        if ext.lower() == '.png':
-            # 이미 .png 확장자이고, 대소문자만 다른 경우 소문자로 통일
-            final_filename = f"{name}.png"
-        else:
-            # .png 확장자가 아니면 .png로 변경
-            final_filename = f"{name}.png"
+        # 파일 확장자가 .png가 아니거나, 대소문자가 다른 경우 .png로 통일
+        final_filename = f"{name}.png"
         return os.path.join(self.cache_dir, final_filename)
     
     def is_image_cached(self, image_filename):
@@ -34,23 +30,20 @@ class ImageService:
     def download_and_cache_image(self, image_data, image_filename):
         """이미지를 다운로드하고 캐시합니다."""
         if not image_data:
-            print(f"[오류] 이미지 데이터가 없습니다: {image_filename}")
             return QPixmap()
 
         cache_path = self.get_cached_image_path(image_filename)
-        normalized_filename = os.path.basename(cache_path) # 정규화된 파일명 (예: image.png)
+        normalized_filename = os.path.basename(cache_path)
         
         try:
             # 메모리 캐시 확인
             with self.cache_lock:
                 if normalized_filename in self.memory_cache:
-                    print(f"[메모리 캐시] 이미지 로드: {normalized_filename}")
                     return self.memory_cache[normalized_filename]
             
             # 디스크 캐시 확인
             # is_image_cached는 내부적으로 get_cached_image_path를 호출하므로 image_filename 원본을 넘겨도 됨
             if self.is_image_cached(image_filename): 
-                print(f"[디스크 캐시] 이미지 로드: {normalized_filename}")
                 pixmap = QPixmap(cache_path)
                 if not pixmap.isNull():
                     with self.cache_lock:
@@ -58,22 +51,17 @@ class ImageService:
                     return pixmap
             
             # 캐시된 이미지가 없으면 다운로드하고 캐시
-            print(f"[스토리지] 이미지 다운로드: {normalized_filename}")
             pixmap = QPixmap()
             if not pixmap.loadFromData(image_data):
-                print(f"[오류] 이미지 로드 실패: {normalized_filename}")
                 return QPixmap()
             
-            # 이미지 크기 최적화
             optimized_pixmap = self.optimize_image(pixmap)
             
-            # 이미지를 캐시 디스크에 PNG 형식으로 저장
             if not optimized_pixmap.save(cache_path, "PNG", quality=85):
                 print(f"[오류] 이미지 저장 실패: {normalized_filename}")
             
-            # 메모리 캐시에 저장
             with self.cache_lock:
-                self.memory_cache[normalized_filename] = optimized_pixmap # 정규화된 파일명으로 저장
+                self.memory_cache[normalized_filename] = optimized_pixmap
             
             return optimized_pixmap
             
@@ -110,11 +98,9 @@ class ImageService:
     
     def clear_cache(self):
         """캐시를 모두 삭제합니다."""
-        # 메모리 캐시 삭제
         with self.cache_lock:
             self.memory_cache.clear()
         
-        # 파일 캐시 삭제
         if os.path.exists(self.cache_dir):
             for file in os.listdir(self.cache_dir):
                 try:
