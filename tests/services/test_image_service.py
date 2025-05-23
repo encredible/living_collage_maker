@@ -1,9 +1,11 @@
 import os
-import shutil
+
 import pytest
-from PyQt6.QtGui import QPixmap, QImage, QColor
 from PyQt6.QtCore import QSize
+from PyQt6.QtGui import QPixmap, QImage, QColor
+
 from src.services.image_service import ImageService
+
 
 @pytest.fixture
 def image_service(tmp_path):

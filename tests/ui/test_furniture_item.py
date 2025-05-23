@@ -1,13 +1,15 @@
+from unittest.mock import patch, ANY
+
 import pytest
-from unittest.mock import Mock, patch, ANY
+from PyQt6.QtCore import QBuffer, QIODevice, QPoint, Qt
 from PyQt6.QtGui import QPixmap, QColor, QContextMenuEvent
-from PyQt6.QtCore import QSize, QBuffer, QIODevice, QEvent, QPoint, Qt
 from PyQt6.QtWidgets import QMenu
 
-from src.ui.canvas import FurnitureItem, Canvas # FurnitureItem 임포트, Canvas 클래스 임포트
-from src.models.furniture import Furniture # Furniture 모델 임포트
-from src.services.image_service import ImageService # ImageService 임포트 (모의 대상)
-from src.services.supabase_client import SupabaseClient # SupabaseClient 임포트 (모의 대상)
+from src.models.furniture import Furniture  # Furniture 모델 임포트
+from src.services.image_service import ImageService  # ImageService 임포트 (모의 대상)
+from src.services.supabase_client import SupabaseClient  # SupabaseClient 임포트 (모의 대상)
+from src.ui.canvas import FurnitureItem, Canvas  # FurnitureItem 임포트, Canvas 클래스 임포트
+
 
 @pytest.fixture
 def mock_furniture_data():

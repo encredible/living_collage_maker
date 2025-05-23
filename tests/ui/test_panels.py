@@ -1,14 +1,17 @@
-import pytest
-from unittest.mock import MagicMock, PropertyMock, patch
-from PyQt6.QtCore import QObject, pyqtSignal, QTimer, Qt, QMimeData, QSize, QEvent, QPointF # QTimer 추가, Qt 추가, QSize, QEvent, QPointF 추가
-from PyQt6.QtGui import QPixmap, QDrag, QMouseEvent, QGuiApplication, QStandardItemModel, QStandardItem # QDrag 추가, QGuiApplication 추가, QStandardItemModel, QStandardItem 추가
-from PyQt6.QtWidgets import QApplication, QLabel # QApplication 임포트 (mousePressEvent 테스트용), QLabel 임포트
+from unittest.mock import MagicMock, patch
 
+import pytest
+from PyQt6.QtCore import QObject, pyqtSignal, QSize, QEvent, QPointF  # QTimer 추가, Qt 추가, QSize, QEvent, QPointF 추가
+from PyQt6.QtGui import QPixmap, QMouseEvent  # QDrag 추가, QGuiApplication 추가, QStandardItemModel, QStandardItem 추가
+from PyQt6.QtWidgets import QLabel  # QApplication 임포트 (mousePressEvent 테스트용), QLabel 임포트
+
+from src.models.furniture import Furniture
 # 테스트 대상 모듈 임포트 시 src. 접두사 필요 여부 확인 (보통 필요)
 from src.services.image_service import ImageService
 from src.services.supabase_client import SupabaseClient
-from src.models.furniture import Furniture
-from src.ui.panels import ImageLoaderThread, FurnitureItem, FurnitureTableModel # ImageLoaderThread 임포트, FurnitureItem 임포트, FurnitureTableModel 임포트
+from src.ui.panels import ImageLoaderThread, \
+    FurnitureItem  # ImageLoaderThread 임포트, FurnitureItem 임포트, FurnitureTableModel 임포트
+
 
 # QApplication 인스턴스 관리는 conftest.py에서 처리
 
@@ -292,8 +295,8 @@ def test_furniture_item_mouse_press_event_drag(qtbot, furniture_item_widget, sam
 
 # FurnitureTableModel Tests
 # -------------------------
-from PyQt6.QtGui import QStandardItemModel, QStandardItem # Ensure these are imported
-from PyQt6.QtCore import QThread, Qt # Ensure Qt is imported
+from PyQt6.QtGui import QStandardItem # Ensure these are imported
+from PyQt6.QtCore import Qt # Ensure Qt is imported
 # QPixmap should be imported from PyQt6.QtGui if not already
 # from PyQt6.QtGui import QPixmap 
 from src.ui.panels import FurnitureTableModel

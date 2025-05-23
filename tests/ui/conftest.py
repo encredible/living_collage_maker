@@ -1,6 +1,8 @@
 import pytest
 from PyQt6.QtGui import QPixmap, QImage, QColor
+
 from src.ui.canvas import ImageAdjuster
+
 
 @pytest.fixture(scope="session", autouse=True) # 원래대로 autouse=True
 def initialize_image_adjuster(): 

@@ -1,5 +1,7 @@
 import pytest
+
 from src.models.furniture import Furniture
+
 
 def test_furniture_from_dict_success():
     """

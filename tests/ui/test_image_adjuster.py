@@ -1,8 +1,11 @@
-import pytest
-from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, QThread, pyqtSignal, QBuffer, QIODevice
-from PyQt6.QtGui import (QPainter, QColor, QPen, QPixmap, QTransform, QImage)
-from src.ui.canvas import ImageAdjuster
 import weakref
+
+import pytest
+from PyQt6.QtCore import QBuffer, QIODevice
+from PyQt6.QtGui import (QColor, QPixmap, QImage)
+
+from src.ui.utils import ImageAdjuster
+
 
 # ImageAdjuster 초기화 (테스트 시작 시 한 번만) -> tests/ui/conftest.py로 이동
 # @pytest.fixture(scope="session", autouse=True)

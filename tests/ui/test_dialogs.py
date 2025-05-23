@@ -1,8 +1,10 @@
-import pytest
-from PyQt6.QtWidgets import QApplication, QPushButton, QDialog
 from unittest.mock import MagicMock
 
+import pytest
+from PyQt6.QtWidgets import QPushButton, QDialog
+
 from src.ui.dialogs import CanvasSizeDialog
+
 
 @pytest.fixture
 def dialog(qtbot):

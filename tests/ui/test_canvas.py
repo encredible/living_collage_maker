@@ -1,15 +1,12 @@
-import pytest
-from unittest.mock import patch, MagicMock, mock_open
 import json
+from unittest.mock import patch, MagicMock, mock_open
 
+import pytest
 from PyQt6.QtCore import QMimeData, QPoint, Qt, QPointF, QEvent, QSize
-from PyQt6.QtWidgets import QFileDialog, QMenu, QWidget, QApplication
 from PyQt6.QtGui import QDropEvent, QDragEnterEvent, QDragMoveEvent, QPixmap, QMouseEvent, QAction
 
-
-from src.ui.canvas import Canvas, FurnitureItem
 from src.models.furniture import Furniture
-from src.ui.dialogs import CanvasSizeDialog
+from src.ui.canvas import Canvas, FurnitureItem
 from src.ui.panels import BottomPanel
 
 
