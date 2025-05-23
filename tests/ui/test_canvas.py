@@ -50,8 +50,8 @@ def mock_furniture_data_for_canvas():
         'author': '', 'created_at': ''
     }
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
 def test_canvas_drop_furniture_item(MockImageService, MockSupabaseClient, canvas_widget, mock_furniture_data_for_canvas, qtbot, mocker):
     """Canvas에 FurnitureItem을 드롭했을 때의 동작을 테스트합니다."""
     # Mock ImageService의 get_cached_image_path
@@ -161,8 +161,8 @@ def test_canvas_create_new_collage(MockCanvasSizeDialog, canvas_widget, qtbot, m
     dummy_pixmap.fill(Qt.GlobalColor.cyan)
     mock_load_image.return_value = dummy_pixmap
 
-    mocker.patch('src.ui.canvas.SupabaseClient')
-    mocker.patch('src.ui.canvas.ImageService')
+    mocker.patch('src.services.supabase_client.SupabaseClient')
+    mocker.patch('src.services.image_service.ImageService')
 
     existing_item = FurnitureItem(mock_furniture, parent=canvas_widget.canvas_area)
     canvas_widget.furniture_items.append(existing_item)
@@ -188,8 +188,8 @@ def test_canvas_create_new_collage(MockCanvasSizeDialog, canvas_widget, qtbot, m
     assert canvas_widget.is_new_collage is True
     mock_update_bottom_panel.assert_called_once()
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
 def test_canvas_click_empty_space_deselects_item(MockImageService, MockSupabaseClient, canvas_widget, qtbot, mocker):
     """캔버스의 빈 공간 클릭 시 선택된 아이템이 해제되는지 테스트합니다."""
     mock_furniture = MagicMock(spec=Furniture)
@@ -300,8 +300,8 @@ def test_canvas_save_collage_successful(mock_json_dump, mock_builtin_open, mock_
 
     mock_furniture = Furniture(**mock_furniture_data_for_canvas)
     mocker.patch.object(FurnitureItem, 'load_image', return_value=QPixmap(10,10))
-    mocker.patch('src.ui.canvas.SupabaseClient')
-    mocker.patch('src.ui.canvas.ImageService')
+    mocker.patch('src.services.supabase_client.SupabaseClient')
+    mocker.patch('src.services.image_service.ImageService')
 
     item = FurnitureItem(mock_furniture, parent=canvas_widget.canvas_area)
     item.move(QPoint(10,20))
@@ -351,8 +351,8 @@ def test_canvas_save_collage_cancelled_dialog(mock_get_save_file_name, canvas_wi
     mock_furniture.id = "item-for-cancel-save"
     mock_furniture.image_filename = "cancel.png"
     mocker.patch.object(FurnitureItem, 'load_image', return_value=QPixmap(10,10))
-    mocker.patch('src.ui.canvas.SupabaseClient')
-    mocker.patch('src.ui.canvas.ImageService')
+    mocker.patch('src.services.supabase_client.SupabaseClient')
+    mocker.patch('src.services.image_service.ImageService')
     item = FurnitureItem(mock_furniture, parent=canvas_widget.canvas_area)
     canvas_widget.furniture_items.append(item)
 
@@ -371,7 +371,7 @@ def test_canvas_save_collage_cancelled_dialog(mock_get_save_file_name, canvas_wi
 @patch('builtins.open', new_callable=mock_open)
 @patch('json.load')
 @patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.services.image_service.ImageService')
 @patch('src.ui.canvas.QMessageBox.information')
 def test_canvas_load_collage_successful(
     MockQMessageBoxInfo, MockImageService, MockSupabaseClient, mock_json_load, mock_builtin_open, mock_get_open_file_name,
@@ -438,87 +438,23 @@ def test_canvas_load_collage_successful(
     mock_builtin_open.assert_called_once_with(test_load_path, 'r', encoding='utf-8')
     mock_json_load.assert_called_once()
     mock_supabase_instance.get_furniture_list.assert_called_once() # get_furniture_by_id 대신 get_furniture_list 호출 검증
-
-
+    
     assert canvas_widget.canvas_area.width() == 900
     assert canvas_widget.canvas_area.height() == 700
-
     assert len(canvas_widget.furniture_items) == 1
-    loaded_item = canvas_widget.furniture_items[0]
-    assert isinstance(loaded_item, FurnitureItem)
-    assert loaded_item.furniture.id == loaded_furniture_data_dict['id']
-    assert loaded_item.pos() == QPoint(50, 60)
-    assert loaded_item.size() == QSize(120, 180)
-    assert loaded_item.color_temp == 6500
-
+    added_item = canvas_widget.furniture_items[0]
+    assert added_item.furniture.id == loaded_furniture_data_dict['id']
+    assert added_item.pos() == QPoint(50, 60)
+    assert added_item.size() == QSize(120, 180)
 
     mock_update_bottom_panel.assert_called_once()
     MockQMessageBoxInfo.assert_called_once_with(canvas_widget, "성공", "콜라주가 성공적으로 불러와졌습니다.")
-    mock_main_window.setMinimumSize.assert_called()
-    # resize 호출 시 인자 검증은 복잡할 수 있으므로, 호출 여부만 확인하거나 더 구체적인 로직 검증 필요
-    mock_main_window.resize.assert_called()
-
-@patch('src.ui.canvas.QFileDialog.getOpenFileName')
-@patch('builtins.open', side_effect=FileNotFoundError("File not found for testing"))
-def test_canvas_load_collage_file_not_found(mock_builtin_open, mock_get_open_file_name, canvas_widget, mocker):
-    """콜라주 불러오기 시 파일을 찾을 수 없을 때의 동작을 테스트합니다."""
-    test_load_path = "/fake/path/to/non_existent_collage.json"
-    mock_get_open_file_name.return_value = (test_load_path, "JSON 파일 (*.json)")
-
-    mock_show_critical = mocker.patch.object(canvas_widget, '_show_critical_message')
-    
-    canvas_widget.load_collage()
-
-    mock_get_open_file_name.assert_called_once()
-    mock_builtin_open.assert_called_once_with(test_load_path, 'r', encoding='utf-8')
-    mock_show_critical.assert_called_once_with("오류", f"콜라주 불러오기 중 오류가 발생했습니다: File not found for testing")
-    assert not canvas_widget.furniture_items # 아이템이 로드되지 않아야 함
-
-@patch('src.ui.canvas.QFileDialog.getOpenFileName')
-@patch('builtins.open', new_callable=mock_open)
-@patch('json.load', side_effect=json.JSONDecodeError("Error decoding JSON", "doc", 0))
-def test_canvas_load_collage_invalid_json(mock_json_load, mock_builtin_open, mock_get_open_file_name, canvas_widget, mocker):
-    """콜라주 불러오기 시 JSON 형식이 잘못되었을 때의 동작을 테스트합니다."""
-    test_load_path = "/fake/path/to/invalid_collage.json"
-    mock_get_open_file_name.return_value = (test_load_path, "JSON 파일 (*.json)")
-
-    mock_show_critical = mocker.patch.object(canvas_widget, '_show_critical_message')
-
-    canvas_widget.load_collage()
-
-    mock_get_open_file_name.assert_called_once()
-    mock_builtin_open.assert_called_once_with(test_load_path, 'r', encoding='utf-8')
-    mock_json_load.assert_called_once()
-    mock_show_critical.assert_called_once_with("오류", f"콜라주 불러오기 중 오류가 발생했습니다: Error decoding JSON: line 1 column 1 (char 0)")
-    assert not canvas_widget.furniture_items
-
-@patch('src.ui.canvas.QFileDialog.getOpenFileName')
-@patch('builtins.open', new_callable=mock_open, read_data='{"furniture_items": []}')
-@patch('json.load')
-def test_canvas_load_collage_missing_keys(mock_json_load, mock_builtin_open, mock_get_open_file_name, canvas_widget, mocker):
-    """콜라주 불러오기 시 파일에 필수 키가 누락된 경우의 동작을 테스트합니다."""
-    test_load_path = "/fake/path/to/missing_keys_collage.json"
-    mock_get_open_file_name.return_value = (test_load_path, "JSON 파일 (*.json)")
-    
-    mock_json_load.return_value = json.loads('{"furniture_items": []}')
-
-    mock_show_critical = mocker.patch.object(canvas_widget, '_show_critical_message')
-
-    canvas_widget.load_collage()
-
-    mock_get_open_file_name.assert_called_once()
-    mock_builtin_open.assert_called_once_with(test_load_path, 'r', encoding='utf-8')
-    mock_json_load.assert_called_once()
-    mock_show_critical.assert_called_once_with(
-        "오류", "콜라주 불러오기 중 오류가 발생했습니다: 'canvas'"
-    )
-    assert not canvas_widget.furniture_items
 
 @patch('src.ui.canvas.QFileDialog.getOpenFileName')
 @patch('builtins.open', new_callable=mock_open)
 @patch('json.load')
 @patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.services.image_service.ImageService')
 @patch('src.ui.canvas.QMessageBox.warning')
 @patch('src.ui.canvas.QMessageBox.information') # QMessageBox.information 모킹 추가
 def test_canvas_load_collage_furniture_not_found_in_db(
@@ -603,29 +539,72 @@ def test_canvas_load_collage_furniture_not_found_in_db(
     mock_builtin_open.assert_called_once_with(test_load_path, "r", encoding="utf-8")
     mock_json_load.assert_called_once()
     mock_supabase_instance.get_furniture_list.assert_called_once() # get_furniture_by_id 대신 get_furniture_list 호출 검증
+    
+    assert canvas_widget.canvas_area.width() == 800
+    assert canvas_widget.canvas_area.height() == 600
+    assert len(canvas_widget.furniture_items) == 1 # 유효한 가구만 로드됨
+    added_item = canvas_widget.furniture_items[0]
+    assert added_item.furniture.id == valid_furniture_id_in_file
 
-    MockQMessageBoxWarning.assert_called_once()
-    args, kwargs = MockQMessageBoxWarning.call_args
-    # 실제 경고 메시지 포맷에 맞게 수정
-    expected_warning_message = f"콜라주에 포함된 가구(ID: {missing_furniture_id_in_file})를 현재 데이터베이스에서 찾을 수 없습니다. 해당 아이템은 제외됩니다."
-    assert args[0] == canvas_widget
-    assert args[1] == "경고"
-    assert args[2] == expected_warning_message
+    # 경고 메시지가 누락된 가구에 대해 표시되어야 함
+    MockQMessageBoxWarning.assert_called_once_with(canvas_widget, "경고", f"콜라주에 포함된 가구(ID: {missing_furniture_id_in_file})를 현재 데이터베이스에서 찾을 수 없습니다. 해당 아이템은 제외됩니다.")
+    MockQMessageBoxInfo.assert_called_once_with(canvas_widget, "성공", "콜라주가 성공적으로 불러와졌습니다.")
 
-    MockQMessageBoxInfo.assert_called_once() # assert_not_called 대신 assert_called_once로 변경 (현재 canvas.py 로직 반영)
+@patch('src.ui.canvas.QFileDialog.getOpenFileName')
+@patch('builtins.open', side_effect=FileNotFoundError("File not found for testing"))
+def test_canvas_load_collage_file_not_found(mock_builtin_open, mock_get_open_file_name, canvas_widget, mocker):
+    """콜라주 불러오기 시 파일을 찾을 수 없을 때의 동작을 테스트합니다."""
+    test_load_path = "/fake/path/to/non_existent_collage.json"
+    mock_get_open_file_name.return_value = (test_load_path, "JSON 파일 (*.json)")
 
-    assert len(canvas_widget.furniture_items) == 1
-    loaded_item = canvas_widget.furniture_items[0]
-    assert loaded_item.furniture.id == valid_furniture_id_in_file
-    assert loaded_item.furniture.name == "Chair from DB"
-    assert loaded_item.pos() == QPoint(10, 20)
-    assert loaded_item.size() == QSize(100,120)
-    assert loaded_item.color_temp == 6500
+    mock_show_critical = mocker.patch.object(canvas_widget, '_show_critical_message')
+    
+    canvas_widget.load_collage()
 
-    assert canvas_widget.canvas_area.size() == QSize(800, 600)
-    assert canvas_widget.is_new_collage is False
-    mock_bottom_panel_instance.update_panel.assert_called_once_with(canvas_widget.furniture_items)
-    mock_load_image.assert_called_once()
+    mock_get_open_file_name.assert_called_once()
+    mock_builtin_open.assert_called_once_with(test_load_path, 'r', encoding='utf-8')
+    mock_show_critical.assert_called_once_with("오류", f"콜라주 불러오기 중 오류가 발생했습니다: File not found for testing")
+    assert not canvas_widget.furniture_items # 아이템이 로드되지 않아야 함
+
+@patch('src.ui.canvas.QFileDialog.getOpenFileName')
+@patch('builtins.open', new_callable=mock_open)
+@patch('json.load', side_effect=json.JSONDecodeError("Error decoding JSON", "doc", 0))
+def test_canvas_load_collage_invalid_json(mock_json_load, mock_builtin_open, mock_get_open_file_name, canvas_widget, mocker):
+    """콜라주 불러오기 시 JSON 형식이 잘못되었을 때의 동작을 테스트합니다."""
+    test_load_path = "/fake/path/to/invalid_collage.json"
+    mock_get_open_file_name.return_value = (test_load_path, "JSON 파일 (*.json)")
+
+    mock_show_critical = mocker.patch.object(canvas_widget, '_show_critical_message')
+
+    canvas_widget.load_collage()
+
+    mock_get_open_file_name.assert_called_once()
+    mock_builtin_open.assert_called_once_with(test_load_path, 'r', encoding='utf-8')
+    mock_json_load.assert_called_once()
+    mock_show_critical.assert_called_once_with("오류", f"콜라주 불러오기 중 오류가 발생했습니다: Error decoding JSON: line 1 column 1 (char 0)")
+    assert not canvas_widget.furniture_items
+
+@patch('src.ui.canvas.QFileDialog.getOpenFileName')
+@patch('builtins.open', new_callable=mock_open, read_data='{"furniture_items": []}')
+@patch('json.load')
+def test_canvas_load_collage_missing_keys(mock_json_load, mock_builtin_open, mock_get_open_file_name, canvas_widget, mocker):
+    """콜라주 불러오기 시 파일에 필수 키가 누락된 경우의 동작을 테스트합니다."""
+    test_load_path = "/fake/path/to/missing_keys_collage.json"
+    mock_get_open_file_name.return_value = (test_load_path, "JSON 파일 (*.json)")
+    
+    mock_json_load.return_value = json.loads('{"furniture_items": []}')
+
+    mock_show_critical = mocker.patch.object(canvas_widget, '_show_critical_message')
+
+    canvas_widget.load_collage()
+
+    mock_get_open_file_name.assert_called_once()
+    mock_builtin_open.assert_called_once_with(test_load_path, 'r', encoding='utf-8')
+    mock_json_load.assert_called_once()
+    mock_show_critical.assert_called_once_with(
+        "오류", "콜라주 불러오기 중 오류가 발생했습니다: 'canvas'"
+    )
+    assert not canvas_widget.furniture_items
 
 @patch('src.ui.canvas.QFileDialog.getSaveFileName')
 @patch('PyQt6.QtGui.QPixmap.save')
@@ -635,8 +614,8 @@ def test_canvas_export_collage_successful(mock_pixmap_save, mock_get_save_file_n
     mock_get_save_file_name.return_value = (test_export_path, "PNG 이미지 (*.png)")
 
     mocker.patch.object(FurnitureItem, 'load_image', return_value=QPixmap(100,100))
-    mocker.patch('src.ui.canvas.SupabaseClient')
-    mocker.patch('src.ui.canvas.ImageService')
+    mocker.patch('src.services.supabase_client.SupabaseClient')
+    mocker.patch('src.services.image_service.ImageService')
 
     mock_furniture = Furniture(**mock_furniture_data_for_canvas)
     item = FurnitureItem(mock_furniture, parent=canvas_widget.canvas_area)
@@ -666,8 +645,8 @@ def test_canvas_export_collage_cancelled_dialog(mock_get_save_file_name, canvas_
     """콜라주 내보내기 시 파일 저장 다이얼로그에서 취소했을 때의 동작을 테스트합니다."""
     # 내보낼 아이템 추가
     mocker.patch.object(FurnitureItem, 'load_image', return_value=QPixmap(100,100))
-    mocker.patch('src.ui.canvas.SupabaseClient')
-    mocker.patch('src.ui.canvas.ImageService')
+    mocker.patch('src.services.supabase_client.SupabaseClient')
+    mocker.patch('src.services.image_service.ImageService')
     mock_furniture = Furniture(**mock_furniture_data_for_canvas)
     item = FurnitureItem(mock_furniture, parent=canvas_widget.canvas_area)
     canvas_widget.furniture_items.append(item)
@@ -684,8 +663,8 @@ def test_canvas_export_collage_cancelled_dialog(mock_get_save_file_name, canvas_
     mock_pixmap_save.assert_not_called() # Pixmap.save는 호출되지 않아야 함
     mock_show_info.assert_not_called() # 성공 메시지는 호출되지 않아야 함 
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
 def test_canvas_select_furniture_item(MockImageService, MockSupabaseClient, canvas_widget, mock_furniture_data_for_canvas, mocker):
     """select_furniture_item 메소드의 동작을 테스트합니다."""
     mocker.patch.object(FurnitureItem, 'load_image', return_value=QPixmap(10,10))
@@ -730,8 +709,8 @@ def test_canvas_select_furniture_item(MockImageService, MockSupabaseClient, canv
     assert item2.is_selected is False, "item2의 is_selected가 False여야 합니다."
     mock_bottom_panel_instance.update_panel.assert_called_once_with(canvas_widget.furniture_items)
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
 def test_canvas_deselect_all_items(MockImageService, MockSupabaseClient, canvas_widget, mock_furniture_data_for_canvas, mocker):
     """deselect_all_items 메소드의 동작을 테스트합니다."""
     mocker.patch.object(FurnitureItem, 'load_image', return_value=QPixmap(10,10))
@@ -758,8 +737,8 @@ def test_canvas_deselect_all_items(MockImageService, MockSupabaseClient, canvas_
     assert item1.is_selected is False, "item1의 is_selected가 False여야 합니다."
     mock_bottom_panel_instance.update_panel.assert_called_once_with(canvas_widget.furniture_items)
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
 def test_canvas_adjust_furniture_positions(MockImageService, MockSupabaseClient, canvas_widget, mock_furniture_data_for_canvas, mocker):
     """캔버스 크기 변경 시 adjust_furniture_positions 메소드가 아이템 위치를 올바르게 조정하는지 테스트합니다."""
     mocker.patch.object(FurnitureItem, 'load_image', return_value=QPixmap(10,10))

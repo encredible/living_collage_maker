@@ -89,12 +89,28 @@ class ImageService:
         if pixmap.isNull():
             return pixmap
         
-        # 원본 비율 유지하면서 크기 조정
-        return pixmap.scaled(
-            size,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.FastTransformation  # 빠른 변환 모드 사용
-        )
+        # size가 튜플인 경우 언패킹하여 사용
+        if isinstance(size, tuple) and len(size) == 2:
+            width, height = size
+            return pixmap.scaled(
+                width, height,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.FastTransformation
+            )
+        # size가 QSize 객체인 경우
+        elif hasattr(size, 'width') and hasattr(size, 'height'):
+            return pixmap.scaled(
+                size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.FastTransformation
+            )
+        else:
+            # size가 단일 값인 경우 정사각형으로 처리
+            return pixmap.scaled(
+                size, size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.FastTransformation
+            )
     
     def clear_cache(self):
         """캐시를 모두 삭제합니다."""

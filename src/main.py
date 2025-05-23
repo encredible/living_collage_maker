@@ -1,4 +1,5 @@
 import sys
+import time
 
 from PyQt6.QtCore import QPoint, Qt, QTimer
 from PyQt6.QtGui import QAction
@@ -137,6 +138,24 @@ class MainWindow(QMainWindow):
     def update_bottom_panel(self):
         """하단 패널을 업데이트합니다."""
         self.bottom_panel.update_panel(self.canvas.furniture_items)
+    
+    def closeEvent(self, event):
+        """애플리케이션 종료 시 호출됩니다."""
+        print("[애플리케이션] 종료 중... 스레드 정리 시작")
+        try:
+            # 탐색 패널의 모든 스레드 정리
+            if hasattr(self.explorer_panel, 'furniture_model'):
+                print("[애플리케이션] ExplorerPanel 스레드 정리 중...")
+                self.explorer_panel.furniture_model.clear_furniture()
+            
+            # 잠시 대기하여 스레드들이 정리될 시간을 줍니다
+            time.sleep(0.1)
+            print("[애플리케이션] 스레드 정리 완료")
+            
+        except Exception as e:
+            print(f"[애플리케이션] 종료 중 오류 발생: {e}")
+        finally:
+            event.accept()  # 종료 허용
 
 def main():
     app = QApplication(sys.argv)

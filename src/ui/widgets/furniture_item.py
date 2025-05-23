@@ -72,6 +72,9 @@ class FurnitureItem(QWidget):
         self.resize_handle = QRect() # resizeEvent에서 실제 값으로 업데이트됨
         self.update_resize_handle() # 명시적 초기 호출
         
+        # 드래그 관련 속성 초기화
+        self.old_pos = None
+        
         # 이미지 조정 다이얼로그의 슬라이더 값 변경 디바운싱용 타이머
         self.update_timer = QTimer(self)
         self.update_timer.setSingleShot(True)
@@ -203,6 +206,9 @@ class FurnitureItem(QWidget):
     
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            # old_pos는 항상 초기화
+            self.old_pos = event.pos()
+            
             # 캔버스 찾기
             canvas_area = self.parent()
             if canvas_area:
@@ -218,7 +224,6 @@ class FurnitureItem(QWidget):
                 self.maintain_aspect_ratio_on_press = bool(QGuiApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
             else:
                 self.raise_()  # 위젯을 최상위로
-                self.old_pos = event.pos()
             event.accept() # 이벤트 전파 중단
     
     def mouseMoveEvent(self, event):
@@ -263,9 +268,10 @@ class FurnitureItem(QWidget):
             self.setFixedSize(new_width, new_height)
             self.update_resize_handle()
         elif event.buttons() & Qt.MouseButton.LeftButton:
-            # 드래그로 이동
-            delta = event.pos() - self.old_pos
-            self.move(self.pos() + delta)
+            # 드래그로 이동 (old_pos가 초기화된 경우에만)
+            if self.old_pos is not None:
+                delta = event.pos() - self.old_pos
+                self.move(self.pos() + delta)
     
     def mouseReleaseEvent(self, event):
         self.is_resizing = False
