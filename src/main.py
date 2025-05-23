@@ -10,6 +10,7 @@ from src.ui.canvas import Canvas
 from src.ui.panels.bottom_panel import BottomPanel
 from src.ui.panels.explorer_panel import ExplorerPanel
 from src.services.html_export_service import HtmlExportService
+from src.services.pdf_export_service import PdfExportService
 
 
 class MainWindow(QMainWindow):
@@ -21,6 +22,9 @@ class MainWindow(QMainWindow):
         
         # HTML 내보내기 서비스 초기화
         self.html_export_service = HtmlExportService(self)
+        
+        # PDF 내보내기 서비스 초기화
+        self.pdf_export_service = PdfExportService(self)
         
         self.setup_ui()
         self.setup_menubar()
@@ -144,10 +148,22 @@ class MainWindow(QMainWindow):
         html_export_action = QAction('콜라주 HTML로 내보내기', self)
         html_export_action.triggered.connect(self.export_html_collage)
         file_menu.addAction(html_export_action)
+        
+        pdf_export_action = QAction('콜라주 PDF로 내보내기', self)
+        pdf_export_action.triggered.connect(self.export_pdf_collage)
+        file_menu.addAction(pdf_export_action)
     
     def export_html_collage(self):
         """콜라주를 HTML 형식으로 내보냅니다."""
         self.html_export_service.export_collage_to_html(
+            canvas_widget=self.canvas,
+            furniture_items=self.canvas.furniture_items,
+            parent_window=self
+        )
+    
+    def export_pdf_collage(self):
+        """콜라주를 PDF 형식으로 내보냅니다."""
+        self.pdf_export_service.export_collage_to_pdf(
             canvas_widget=self.canvas,
             furniture_items=self.canvas.furniture_items,
             parent_window=self
