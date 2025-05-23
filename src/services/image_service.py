@@ -1,15 +1,21 @@
 import os
 import threading
 import weakref
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 
 from PyQt6.QtCore import QBuffer, QIODevice, Qt
 from PyQt6.QtGui import QPixmap
+from platformdirs import user_cache_dir
 
 
 class ImageService:
     def __init__(self):
-        self.cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.image')
+        # 크로스플랫폼 캐시 디렉토리 설정
+        # Windows: C:\Users\Username\AppData\Local\LivingCollageMaker\Cache
+        # macOS: ~/Library/Caches/LivingCollageMaker  
+        # Linux: ~/.cache/LivingCollageMaker
+        self.cache_dir = user_cache_dir("LivingCollageMaker", "LivingCollageMaker")
         os.makedirs(self.cache_dir, exist_ok=True)
         self.memory_cache = weakref.WeakValueDictionary()  # 약한 참조를 사용한 메모리 캐시
         self.cache_lock = threading.Lock()  # 스레드 안전성을 위한 락
