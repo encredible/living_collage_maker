@@ -8,7 +8,8 @@ from PyQt6.QtWidgets import QMenu
 from src.models.furniture import Furniture  # Furniture 모델 임포트
 from src.services.image_service import ImageService  # ImageService 임포트 (모의 대상)
 from src.services.supabase_client import SupabaseClient  # SupabaseClient 임포트 (모의 대상)
-from src.ui.canvas import FurnitureItem, Canvas  # FurnitureItem 임포트, Canvas 클래스 임포트
+from src.ui.canvas import Canvas  # Canvas 클래스 임포트
+from src.ui.widgets import FurnitureItem  # FurnitureItem 임포트
 
 
 @pytest.fixture
@@ -59,8 +60,8 @@ def test_furniture_item_creation(initialize_image_adjuster, furniture_obj, mocke
     assert item.furniture == furniture_obj
     mock_load_image.assert_called_once()
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
 def test_furniture_item_load_image_success(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, mocker, qtbot):
     """load_image 성공 시 pixmap 및 original_pixmap이 올바르게 설정되는지 테스트합니다."""
     mock_supabase_instance = MockSupabaseClient.return_value
@@ -114,8 +115,8 @@ def test_furniture_item_load_image_success(MockImageService, MockSupabaseClient,
     assert item.width() == expected_width
     assert item.height() == expected_height
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
 def test_furniture_item_load_image_failure(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, mocker, qtbot):
     """load_image 실패 시 (null pixmap 반환) 기본 에러 이미지가 설정되는지 테스트합니다."""
     mock_supabase_instance = MockSupabaseClient.return_value
@@ -137,9 +138,9 @@ def test_furniture_item_load_image_failure(MockImageService, MockSupabaseClient,
     assert item.original_pixmap is not None
     assert item.original_pixmap.size() == item.pixmap.size() # 실패 시 original_pixmap은 현재 pixmap(에러 이미지)과 동일한 크기
 
-@patch('src.ui.canvas.ImageAdjuster.apply_effects')
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.ui.utils.ImageAdjuster.apply_effects')
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
 def test_furniture_item_apply_image_effects(MockImageService, MockSupabaseClient, mock_apply_effects, initialize_image_adjuster, furniture_obj, dummy_qpixmap, dummy_pixmap_red_small, qtbot, mocker):
     """apply_image_effects 호출 시 ImageAdjuster.apply_effects가 호출되고 pixmap이 업데이트되는지 테스트합니다."""
     MockImageService.return_value.download_and_cache_image.return_value = dummy_qpixmap
@@ -184,8 +185,8 @@ def test_furniture_item_apply_image_effects(MockImageService, MockSupabaseClient
     assert item.brightness == new_brightness
     assert item.saturation == new_saturation
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
 def test_furniture_item_reset_image_adjustments(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
     """reset_image_adjustments 호출 시 pixmap이 original_pixmap으로 복원되고 조정값이 초기화되는지 테스트합니다."""
     MockImageService.return_value.download_and_cache_image.return_value = dummy_qpixmap
@@ -235,8 +236,8 @@ def test_furniture_item_reset_image_adjustments(MockImageService, MockSupabaseCl
 
 # --- pytest-qt를 사용한 UI 상호작용 테스트 --- #
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
 def test_furniture_item_selection_via_canvas(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
     """Canvas를 통해 FurnitureItem 클릭 시 선택 상태가 올바르게 변경되는지 테스트합니다."""
     mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
@@ -286,8 +287,8 @@ def test_furniture_item_selection_via_canvas(MockImageService, MockSupabaseClien
     assert item2.is_selected is False
     assert canvas_widget.selected_item is None
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
 def test_furniture_item_drag_move(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
     """FurnitureItem을 마우스로 드래그하여 이동시키는지 테스트합니다."""
     mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
@@ -321,8 +322,8 @@ def test_furniture_item_drag_move(MockImageService, MockSupabaseClient, initiali
     expected_pos = original_pos + (end_drag_pos_local - start_drag_pos)
     assert item.pos() == expected_pos 
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
 def test_furniture_item_resize_drag_handle(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
     """리사이즈 핸들 드래그 시 FurnitureItem의 크기가 변경되는지 테스트합니다."""
     mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
@@ -380,8 +381,8 @@ def test_furniture_item_resize_drag_handle(MockImageService, MockSupabaseClient,
     assert item.width() == expected_width
     assert item.height() == expected_height
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
 def test_furniture_item_resize_aspect_ratio_locked(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
     """Shift 누르고 리사이즈 핸들 드래그 시 종횡비가 유지되는지 테스트합니다."""
     mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
@@ -442,9 +443,9 @@ def test_furniture_item_resize_aspect_ratio_locked(MockImageService, MockSupabas
     assert abs(final_size.height() - (initial_size.height() * (final_size.width() / initial_size.width()))) < 1e-5 # 부동소수점 비교
     assert abs(final_aspect_ratio - initial_aspect_ratio) < 1e-5
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
-# @patch('src.ui.canvas.QMenu') # QMenu 모의 처리는 FurnitureItem 내부 처리 방식 변경으로 불필요
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
+# @patch('src.ui.widgets.QMenu') # QMenu 모의 처리는 FurnitureItem 내부 처리 방식 변경으로 불필요
 def test_furniture_item_context_menu_actions(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
     """FurnitureItem 컨텍스트 메뉴 액션 (삭제) 테스트합니다."""
     mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
@@ -501,7 +502,7 @@ def test_furniture_item_context_menu_actions(MockImageService, MockSupabaseClien
     mock_event = mocker.MagicMock(spec=QContextMenuEvent) # QContextMenuEvent 사용
     mock_event.globalPos.return_value = QPoint(10, 10) # 임의의 전역 위치
 
-    with patch('src.ui.canvas.QMenu', return_value=mock_menu) as mock_qmenu_class:
+    with patch('src.ui.widgets.furniture_item.QMenu', return_value=mock_menu) as mock_qmenu_class:
         item.contextMenuEvent(mock_event) # 직접 호출
 
     # deleteLater 호출 확인
@@ -530,8 +531,8 @@ def test_furniture_item_context_menu_actions(MockImageService, MockSupabaseClien
     #     pass # Canvas에 send_selected_item_to_back 메소드가 없으므로 테스트 불가
     # spy_send_to_back.reset_mock() 
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
 def test_furniture_item_context_menu_flip_action(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
     """FurnitureItem 컨텍스트 메뉴 '좌우 반전' 액션 테스트합니다."""
     mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
@@ -578,7 +579,7 @@ def test_furniture_item_context_menu_flip_action(MockImageService, MockSupabaseC
     mock_event = mocker.MagicMock(spec=QContextMenuEvent)
     mock_event.globalPos.return_value = QPoint(10, 10)
 
-    with patch('src.ui.canvas.QMenu', return_value=mock_menu), \
+    with patch('src.ui.widgets.furniture_item.QMenu', return_value=mock_menu), \
          patch('PyQt6.QtGui.QPixmap.transformed') as mock_transformed:
         # transformed가 새 QPixmap 객체를 반환하도록 설정
         mock_transformed.return_value = dummy_qpixmap.copy() # 내용을 유지하면서 새 객체 반환
@@ -596,7 +597,7 @@ def test_furniture_item_context_menu_flip_action(MockImageService, MockSupabaseC
     mock_transformed.reset_mock()
     spy_update.reset_mock()
 
-    with patch('src.ui.canvas.QMenu', return_value=mock_menu), \
+    with patch('src.ui.widgets.furniture_item.QMenu', return_value=mock_menu), \
          patch('PyQt6.QtGui.QPixmap.transformed') as mock_transformed_again:
         mock_transformed_again.return_value = dummy_qpixmap.copy()
         item.contextMenuEvent(mock_event)
@@ -605,8 +606,8 @@ def test_furniture_item_context_menu_flip_action(MockImageService, MockSupabaseC
     assert item.is_flipped is False # 다시 False로
     spy_update.assert_called_once()
 
-@patch('src.ui.canvas.SupabaseClient')
-@patch('src.ui.canvas.ImageService')
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
 def test_furniture_item_context_menu_adjust_action(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
     """FurnitureItem 컨텍스트 메뉴 '이미지 조정' 액션 테스트합니다."""
     mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
@@ -650,7 +651,7 @@ def test_furniture_item_context_menu_adjust_action(MockImageService, MockSupabas
     mock_event = mocker.MagicMock(spec=QContextMenuEvent)
     mock_event.globalPos.return_value = QPoint(10, 10)
 
-    with patch('src.ui.canvas.QMenu', return_value=mock_menu):
+    with patch('src.ui.widgets.furniture_item.QMenu', return_value=mock_menu):
         item.contextMenuEvent(mock_event)
 
     # show_adjustment_dialog가 호출되었는지 확인

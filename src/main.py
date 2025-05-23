@@ -5,8 +5,8 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (QApplication, QHBoxLayout, QMainWindow, QSplitter,
                              QWidget)
 
-from ui.canvas import Canvas
-from ui.panels import BottomPanel, ExplorerPanel
+from src.ui.canvas import Canvas
+from src.ui.panels import BottomPanel, ExplorerPanel
 
 
 class MainWindow(QMainWindow):

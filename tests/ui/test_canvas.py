@@ -79,7 +79,7 @@ def test_canvas_drop_furniture_item(MockImageService, MockSupabaseClient, canvas
 
     mock_main_window = MagicMock()
     mock_bottom_panel_instance = MagicMock(spec=BottomPanel)
-    mock_main_window.findChild.return_value = mock_bottom_panel_instance 
+    mock_main_window.bottom_panel = mock_bottom_panel_instance  # bottom_panel 속성으로 설정
     mocker.patch.object(canvas_widget, 'window', return_value=mock_main_window)
     
     mock_map_from = mocker.patch.object(canvas_widget.canvas_area, 'mapFrom')
@@ -423,10 +423,14 @@ def test_canvas_load_collage_successful(
     mock_update_bottom_panel = mocker.patch.object(canvas_widget, 'update_bottom_panel')
 
     # window().width() 와 window().height()가 호출되므로, width와 height를 호출 가능한 MagicMock으로 설정
-    mock_window = MagicMock()
-    mock_window.width = MagicMock(return_value=1024)
-    mock_window.height = MagicMock(return_value=768)
-    mocker.patch.object(canvas_widget, 'window', return_value=mock_window)
+    mock_main_window = MagicMock()
+    mock_main_window.width = MagicMock(return_value=1200)  # width() 메서드가 숫자 반환
+    mock_main_window.height = MagicMock(return_value=800)  # height() 메서드가 숫자 반환
+    mock_main_window.setMinimumSize = MagicMock()  # setMinimumSize 메서드 mock
+    mock_main_window.resize = MagicMock()  # resize 메서드 mock
+    mock_bottom_panel_instance = MagicMock(spec=BottomPanel)
+    mock_main_window.bottom_panel = mock_bottom_panel_instance  # bottom_panel 속성으로 설정
+    mocker.patch.object(canvas_widget, 'window', return_value=mock_main_window)
 
     canvas_widget.load_collage()
 
@@ -450,9 +454,9 @@ def test_canvas_load_collage_successful(
 
     mock_update_bottom_panel.assert_called_once()
     MockQMessageBoxInfo.assert_called_once_with(canvas_widget, "성공", "콜라주가 성공적으로 불러와졌습니다.")
-    mock_window.setMinimumSize.assert_called()
+    mock_main_window.setMinimumSize.assert_called()
     # resize 호출 시 인자 검증은 복잡할 수 있으므로, 호출 여부만 확인하거나 더 구체적인 로직 검증 필요
-    mock_window.resize.assert_called()
+    mock_main_window.resize.assert_called()
 
 @patch('src.ui.canvas.QFileDialog.getOpenFileName')
 @patch('builtins.open', side_effect=FileNotFoundError("File not found for testing"))
@@ -568,7 +572,7 @@ def test_canvas_load_collage_furniture_not_found_in_db(
     mock_json_load.return_value = collage_data_from_file
     mock_builtin_open.return_value = mock_open(read_data=json.dumps(collage_data_from_file)).return_value
 
-    mock_supabase_client_instance = MockSupabaseClient.return_value
+    mock_supabase_instance = MockSupabaseClient.return_value
     # db_furniture_data_valid는 DB에 있는 Furniture 데이터의 dict 형태
     # get_furniture_list는 이러한 dict의 list를 반환해야 함
     db_furniture_data_valid = { # Supabase에서 반환될 Furniture 객체의 속성
@@ -578,18 +582,19 @@ def test_canvas_load_collage_furniture_not_found_in_db(
         "author": "test", "created_at": "2023-01-01T00:00:00"
     }
 
-    mock_supabase_client_instance.get_furniture_list.return_value = [db_furniture_data_valid]
+    mock_supabase_instance.get_furniture_list.return_value = [db_furniture_data_valid]
 
     mock_image_service_instance = MockImageService.return_value
     mock_image_service_instance.get_cached_image_path.return_value = "/fake/path/image.png"
     mock_load_image = mocker.patch.object(FurnitureItem, 'load_image', return_value=QPixmap(100, 100))
 
     mock_main_window = MagicMock()
+    mock_main_window.width = MagicMock(return_value=1200)  # width() 메서드가 숫자 반환
+    mock_main_window.height = MagicMock(return_value=800)  # height() 메서드가 숫자 반환
+    mock_main_window.setMinimumSize = MagicMock()  # setMinimumSize 메서드 mock
+    mock_main_window.resize = MagicMock()  # resize 메서드 mock
     mock_bottom_panel_instance = MagicMock(spec=BottomPanel)
-    mock_main_window.findChild.return_value = mock_bottom_panel_instance
-    # window().width() 와 window().height() 호출에 맞게 수정
-    mock_main_window.width = MagicMock(return_value=1200)
-    mock_main_window.height = MagicMock(return_value=800)
+    mock_main_window.bottom_panel = mock_bottom_panel_instance  # bottom_panel 속성으로 설정
     mocker.patch.object(canvas_widget, 'window', return_value=mock_main_window)
 
     canvas_widget.load_collage()
@@ -597,7 +602,7 @@ def test_canvas_load_collage_furniture_not_found_in_db(
     mock_get_open_file_name.assert_called_once()
     mock_builtin_open.assert_called_once_with(test_load_path, "r", encoding="utf-8")
     mock_json_load.assert_called_once()
-    mock_supabase_client_instance.get_furniture_list.assert_called_once() # get_furniture_by_id 대신 get_furniture_list 호출 검증
+    mock_supabase_instance.get_furniture_list.assert_called_once() # get_furniture_by_id 대신 get_furniture_list 호출 검증
 
     MockQMessageBoxWarning.assert_called_once()
     args, kwargs = MockQMessageBoxWarning.call_args
@@ -687,7 +692,7 @@ def test_canvas_select_furniture_item(MockImageService, MockSupabaseClient, canv
     
     mock_main_window = MagicMock()
     mock_bottom_panel_instance = MagicMock(spec=BottomPanel)
-    mock_main_window.findChild.return_value = mock_bottom_panel_instance
+    mock_main_window.bottom_panel = mock_bottom_panel_instance  # bottom_panel 속성으로 설정
     mocker.patch.object(canvas_widget, 'window', return_value=mock_main_window)
 
     furniture_1_data = mock_furniture_data_for_canvas.copy()
@@ -733,7 +738,7 @@ def test_canvas_deselect_all_items(MockImageService, MockSupabaseClient, canvas_
 
     mock_main_window = MagicMock()
     mock_bottom_panel_instance = MagicMock(spec=BottomPanel)
-    mock_main_window.findChild.return_value = mock_bottom_panel_instance
+    mock_main_window.bottom_panel = mock_bottom_panel_instance  # bottom_panel 속성으로 설정
     mocker.patch.object(canvas_widget, 'window', return_value=mock_main_window)
 
     furniture_1_data = mock_furniture_data_for_canvas.copy()
