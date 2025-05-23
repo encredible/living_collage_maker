@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (QApplication, QHBoxLayout, QMainWindow, QSplitter,
 from src.ui.canvas import Canvas
 from src.ui.panels.bottom_panel import BottomPanel
 from src.ui.panels.explorer_panel import ExplorerPanel
+from src.services.html_export_service import HtmlExportService
 
 
 class MainWindow(QMainWindow):
@@ -17,6 +18,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Living Collage Maker")
         self.previous_canvas_global_top_left = None # 이전 캔버스 전역 좌상단 좌표
         self.is_initializing_geometry = True # 초기화 중 플래그
+        
+        # HTML 내보내기 서비스 초기화
+        self.html_export_service = HtmlExportService(self)
+        
         self.setup_ui()
         self.setup_menubar()
     
@@ -135,6 +140,18 @@ class MainWindow(QMainWindow):
         export_action = QAction('콜라주 내보내기', self)
         export_action.triggered.connect(lambda: self.canvas.export_collage())
         file_menu.addAction(export_action)
+
+        html_export_action = QAction('콜라주 HTML로 내보내기', self)
+        html_export_action.triggered.connect(self.export_html_collage)
+        file_menu.addAction(html_export_action)
+    
+    def export_html_collage(self):
+        """콜라주를 HTML 형식으로 내보냅니다."""
+        self.html_export_service.export_collage_to_html(
+            canvas_widget=self.canvas,
+            furniture_items=self.canvas.furniture_items,
+            parent_window=self
+        )
     
     def update_bottom_panel(self):
         """하단 패널을 업데이트합니다."""

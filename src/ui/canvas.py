@@ -349,6 +349,29 @@ class Canvas(QWidget):
         """정보 메시지 박스를 표시하는 내부 헬퍼 메소드."""
         QMessageBox.information(self, title, message)
     
+    def _generate_collage_image(self) -> QPixmap:
+        """현재 콜라주를 QPixmap 이미지로 생성합니다."""
+        # 캔버스 영역의 크기로 이미지 생성
+        image = QPixmap(self.canvas_area.size())
+        image.fill(Qt.GlobalColor.white)
+        
+        # 이미지에 현재 콜라주 그리기
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # 모든 가구 아이템 그리기
+        for item in self.furniture_items:
+            # 아이템의 위치를 캔버스 영역 기준으로 변환
+            pos = item.pos()
+            painter.drawPixmap(pos, item.pixmap.scaled(
+                item.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            ))
+        
+        painter.end()
+        return image
+    
     def dragEnterEvent(self, event):
         """드래그 진입 이벤트를 처리합니다."""
         if event.mimeData().hasFormat("application/x-furniture"):
@@ -450,25 +473,8 @@ class Canvas(QWidget):
         
         if file_path:
             try:
-                # 캔버스 영역의 크기로 이미지 생성
-                image = QPixmap(self.canvas_area.size())
-                image.fill(Qt.GlobalColor.white)
-                
-                # 이미지에 현재 콜라주 그리기
-                painter = QPainter(image)
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                
-                # 모든 가구 아이템 그리기
-                for item in self.furniture_items:
-                    # 아이템의 위치를 캔버스 영역 기준으로 변환
-                    pos = item.pos()
-                    painter.drawPixmap(pos, item.pixmap.scaled(
-                        item.size(),
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation
-                    ))
-                
-                painter.end()
+                # 공통 이미지 생성 메서드 사용
+                image = self._generate_collage_image()
                 
                 # 이미지 저장
                 image.save(file_path)
