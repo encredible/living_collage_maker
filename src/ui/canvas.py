@@ -9,11 +9,11 @@ from PyQt6.QtGui import (QPainter, QColor, QPen, QPixmap, QTransform, QImage)
 from PyQt6.QtWidgets import (QWidget, QLabel, QPushButton,
                              QMenu, QMessageBox, QFileDialog, QSlider, QHBoxLayout,
                              QDialog, QGroupBox, QVBoxLayout)
-from models.furniture import Furniture
-from services.image_service import ImageService
-from services.supabase_client import SupabaseClient
-from ui.dialogs import CanvasSizeDialog
-from ui.panels import ExplorerPanel, BottomPanel
+from src.models.furniture import Furniture
+from src.services.image_service import ImageService
+from src.services.supabase_client import SupabaseClient
+from src.ui.dialogs import CanvasSizeDialog
+from src.ui.panels import ExplorerPanel, BottomPanel
 
 
 class ImageProcessor(QThread):

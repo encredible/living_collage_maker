@@ -5,9 +5,9 @@ from PyQt6.QtGui import QPixmap, QDrag, QStandardItemModel, QStandardItem
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton,
                              QComboBox, QGridLayout, QTableView, QFrame)
-from models.furniture import Furniture
-from services.image_service import ImageService
-from services.supabase_client import SupabaseClient
+from src.models.furniture import Furniture
+from src.services.image_service import ImageService
+from src.services.supabase_client import SupabaseClient
 
 
 class ImageLoaderThread(QThread):
