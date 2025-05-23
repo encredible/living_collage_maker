@@ -1262,6 +1262,8 @@ class FurnitureItem(QWidget):
         self.is_processing = False
 
 class Canvas(QWidget):
+    CANVAS_COLOR = QColor("#e0e0e0") # 클래스 변수로 CANVAS_COLOR 추가
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
@@ -1321,8 +1323,10 @@ class Canvas(QWidget):
         
         # 새 아이템 선택
         self.selected_item = item
-        item.is_selected = True
-        item.update()
+        if item:
+            item.is_selected = True
+            item.update()
+        self.update_bottom_panel() # 하단 패널 업데이트 추가
     
     # 모든 가구 아이템 선택 해제
     def deselect_all_items(self):
@@ -1330,6 +1334,7 @@ class Canvas(QWidget):
             self.selected_item.is_selected = False
             self.selected_item.update()
             self.selected_item = None
+            self.update_bottom_panel() # 하단 패널 업데이트 추가
     
     def show_context_menu(self, position):
         """캔버스 영역에서 우클릭했을 때 컨텍스트 메뉴를 표시합니다."""
@@ -1354,7 +1359,7 @@ class Canvas(QWidget):
     def save_collage(self):
         """현재 콜라주를 JSON 파일로 저장합니다."""
         if not self.furniture_items and self.is_new_collage:
-            QMessageBox.warning(self, "경고", "저장할 콜라주가 없습니다.")
+            self._show_warning_message("경고", "저장할 콜라주가 없습니다.")
             return
         
         # 파일 저장 다이얼로그
@@ -1407,10 +1412,10 @@ class Canvas(QWidget):
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(collage_data, f, ensure_ascii=False, indent=2)
                 
-                QMessageBox.information(self, "성공", "콜라주가 성공적으로 저장되었습니다.")
+                self._show_information_message("성공", "콜라주가 성공적으로 저장되었습니다.")
                 
             except Exception as e:
-                QMessageBox.critical(self, "오류", f"콜라주 저장 중 오류가 발생했습니다: {str(e)}")
+                self._show_critical_message("오류", f"콜라주 저장 중 오류가 발생했습니다: {str(e)}")
     
     def load_collage(self):
         """저장된 콜라주를 JSON 파일에서 불러옵니다."""
@@ -1508,6 +1513,10 @@ class Canvas(QWidget):
                         self.furniture_items.append(item)
                     else:
                         print(f"가구 ID를 찾을 수 없습니다: {furniture_id}")
+                        # QMessageBox.warning(self, "경고", f"콜라주에 포함된 가구(ID: {furniture_id})를 현재 데이터베이스에서 찾을 수 없습니다. 해당 아이템은 제외됩니다.")
+                        self._show_warning_message("경고", f"콜라주에 포함된 가구(ID: {furniture_id})를 현재 데이터베이스에서 찾을 수 없습니다. 해당 아이템은 제외됩니다.")
+                        # 누락된 아이템 정보 기록 또는 처리
+                        continue # 다음 아이템으로 넘어감
                 
                 # 하단 패널 업데이트
                 self.update_bottom_panel()
@@ -1536,12 +1545,18 @@ class Canvas(QWidget):
                     window.setMinimumSize(new_width, new_height)
                     window.resize(new_width, new_height)
                 
-                QMessageBox.information(self, "성공", "콜라주가 성공적으로 불러와졌습니다.")
+                self._show_information_message("성공", "콜라주가 성공적으로 불러와졌습니다.")
                 
             except Exception as e:
                 import traceback
                 traceback.print_exc()  # 자세한 오류 정보 출력
-                QMessageBox.critical(self, "오류", f"콜라주 불러오기 중 오류가 발생했습니다: {str(e)}")
+                self._show_critical_message("오류", f"콜라주 불러오기 중 오류가 발생했습니다: {str(e)}")
+            except FileNotFoundError as e:
+                self._show_critical_message("오류", f"콜라주 파일을 열 수 없습니다: {str(e)}")
+            except Exception as e: # 가장 마지막에 위치해야 하는 일반 예외 처리
+                import traceback
+                traceback.print_exc()  # 자세한 오류 정보 출력
+                self._show_critical_message("오류", f"콜라주 불러오기 중 예기치 않은 오류가 발생했습니다: {str(e)}")
     
     def create_new_collage(self):
         """새 콜라주를 생성합니다."""
@@ -1558,13 +1573,26 @@ class Canvas(QWidget):
             
             # canvas_area 크기 설정 (이때 eventFilter가 호출되어 Canvas 크기도 조절됨)
             self.canvas_area.setFixedSize(width, height)
-            self.is_new_collage = False
+            self.is_new_collage = False # <--- 여기를 False로 수정
             
             # self.canvas_area.update() # 필요시 canvas_area 직접 업데이트
             # self.update() # Canvas 업데이트 (paintEvent 호출하여 크기 텍스트 등 갱신)
             
             # 하단 패널 업데이트
             self.update_bottom_panel()
+            self.is_new_collage = True # 새 콜라주 상태로 설정
+
+    def _show_warning_message(self, title: str, message: str):
+        """경고 메시지 박스를 표시하는 내부 헬퍼 메소드."""
+        QMessageBox.warning(self, title, message)
+
+    def _show_critical_message(self, title: str, message: str):
+        """오류 메시지 박스를 표시하는 내부 헬퍼 메소드."""
+        QMessageBox.critical(self, title, message)
+
+    def _show_information_message(self, title: str, message: str):
+        """정보 메시지 박스를 표시하는 내부 헬퍼 메소드."""
+        QMessageBox.information(self, title, message)
     
     def dragEnterEvent(self, event):
         """드래그 진입 이벤트를 처리합니다."""
@@ -1603,7 +1631,7 @@ class Canvas(QWidget):
                 self.select_furniture_item(item)
                 
                 # 하단 패널 업데이트
-                self.update_bottom_panel()
+                # self.update_bottom_panel() # select_furniture_item 내부에서 호출되므로 중복 제거
                 
                 event.acceptProposedAction()
         except Exception as e:
@@ -1624,7 +1652,12 @@ class Canvas(QWidget):
         # 메인 윈도우에서 하단 패널 업데이트
         main_window = self.window()
         if main_window:
-            main_window.update_bottom_panel()
+            # BottomPanel 인스턴스를 찾아서 직접 업데이트
+            bottom_panel = main_window.findChild(BottomPanel)
+            if bottom_panel:
+                bottom_panel.update_panel(self.furniture_items)
+            else:
+                print("[Canvas] BottomPanel을 찾을 수 없습니다.")
     
     def paintEvent(self, event):
         # Canvas 자체의 paintEvent는 이제 배경을 그리지 않거나 최소한의 것만 그림
@@ -1651,7 +1684,7 @@ class Canvas(QWidget):
     def export_collage(self):
         """현재 콜라주를 이미지로 내보냅니다."""
         if not self.furniture_items:
-            QMessageBox.warning(self, "경고", "내보낼 콜라주가 없습니다.")
+            self._show_warning_message("경고", "내보낼 콜라주가 없습니다.")
             return
         
         # 파일 저장 다이얼로그
@@ -1686,7 +1719,7 @@ class Canvas(QWidget):
                 
                 # 이미지 저장
                 image.save(file_path)
-                QMessageBox.information(self, "성공", "콜라주가 성공적으로 저장되었습니다.")
+                self._show_information_message("성공", "콜라주가 성공적으로 저장되었습니다.")
                 
             except Exception as e:
-                QMessageBox.critical(self, "오류", f"이미지 저장 중 오류가 발생했습니다: {str(e)}")
+                self._show_critical_message("오류", f"이미지 저장 중 오류가 발생했습니다: {str(e)}")
