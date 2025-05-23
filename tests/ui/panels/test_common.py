@@ -1,19 +1,18 @@
-"""UI 패널 모듈 테스트
+"""UI 패널 공통 모듈 테스트
 
-패널 모듈의 기능을 테스트합니다.
+패널 공통 모듈의 기능을 테스트합니다.
 """
 
 import unittest.mock
 from unittest.mock import patch, MagicMock
 
 import pytest
-from PyQt6.QtCore import QObject, QEvent, QPointF, pyqtSignal, QSize
+from PyQt6.QtCore import QObject, QEvent, QPointF, pyqtSignal, QSize, Qt
 from PyQt6.QtGui import QMouseEvent, QPixmap
 from PyQt6.QtWidgets import QLabel
 
 from src.models.furniture import Furniture
-from src.ui.panels import ImageLoaderThread, \
-    FurnitureItem, SelectedFurnitureTableModel
+from src.ui.panels.common import ImageLoaderThread, FurnitureItem, FurnitureTableModel, SelectedFurnitureTableModel
 
 
 @pytest.fixture
@@ -59,6 +58,7 @@ class SignalListener(QObject):
         self.received_filename = filename
         self.received_pixmap = pixmap
 
+# ImageLoaderThread 테스트들
 def test_image_loader_thread_run_success(qtbot, image_loader_thread, mock_image_service, mock_supabase_client, sample_furniture):
     """ImageLoaderThread.run()이 성공적으로 실행되는지 테스트합니다."""
     listener = SignalListener()
@@ -137,8 +137,7 @@ def test_image_loader_thread_run_image_service_error(qtbot, image_loader_thread,
     assert listener.received_filename is None
     assert listener.received_pixmap is None
 
-# 만약 특정 임포트가 누락되었다면, 테스트 실행 시 ImportError가 발생할 것입니다.
-
+# FurnitureItem 테스트들
 @pytest.fixture
 def furniture_item_widget(qtbot, sample_furniture, mock_image_service, mock_supabase_client):
     """테스트용 FurnitureItem 위젯을 생성하고 qtbot에 등록합니다."""
@@ -302,10 +301,6 @@ def test_furniture_item_mouse_press_event_drag(qtbot, furniture_item_widget, sam
             'height': sample_furniture.height,
             'seat_height': sample_furniture.seat_height,
             'author': sample_furniture.author,
-            # sample_furniture.created_at은 datetime 객체일 수 있음. 
-            # MIME 데이터로 변환 시 문자열로 변환되는지 확인 필요.
-            # FurnitureItem.mousePressEvent 코드를 보면 str(furniture_data).encode()로 변환.
-            # 여기서 furniture_data는 dict. dict를 str()로 변환하면 datetime 객체도 repr 형태로 들어감.
             'created_at': sample_furniture.created_at 
         }
         # 실제 MIME 데이터는 bytearray이므로 .data()를 한 번 더 호출하거나 bytes()로 변환 후 decode
@@ -313,13 +308,7 @@ def test_furniture_item_mouse_press_event_drag(qtbot, furniture_item_widget, sam
         assert actual_data_str == str(expected_data_dict)
         mock_drag_instance.exec.assert_called_once()
 
-# FurnitureTableModel Tests
-# -------------------------
-from PyQt6.QtCore import Qt # Ensure Qt is imported
-# QPixmap should be imported from PyQt6.QtGui if not already
-# from PyQt6.QtGui import QPixmap 
-from src.ui.panels import FurnitureTableModel
-
+# FurnitureTableModel 테스트들
 @pytest.fixture
 def furniture_table_model(qtbot, mock_image_service, mock_supabase_client):
     with patch('src.ui.panels.common.ImageService', return_value=mock_image_service), \
@@ -376,11 +365,6 @@ def test_furniture_table_model_add_multiple_furniture(furniture_table_model, sam
         # 두 번째 가구 검증
         assert furniture_table_model.item(1, 1).text() == furniture2.brand
 
-# ImageLoaderThread을 사용한 다른 테스트에서 실제 threading이 사용되는지 검증
-# def test_image_loader_thread_in_furniture_table_model():
-#     # 이 테스트는 실제 이미지 로딩과 스레드 동작을 검증하므로 별도로 작성 가능
-#     pass
-
 def test_furniture_table_model_clear_furniture(furniture_table_model, sample_furniture):
     """clear_furniture 메서드가 올바르게 동작하는지 테스트합니다."""
     # 가구 추가
@@ -413,6 +397,7 @@ def test_furniture_table_model_clear_furniture(furniture_table_model, sample_fur
     for i, header in enumerate(expected_headers):
         assert furniture_table_model.headerData(i, Qt.Orientation.Horizontal) == header
 
+# SelectedFurnitureTableModel 테스트들
 def test_selected_furniture_table_model():
     """SelectedFurnitureTableModel의 기본 동작을 테스트합니다."""
     model = SelectedFurnitureTableModel()
@@ -482,4 +467,4 @@ def test_selected_furniture_table_model():
     model.clear_furniture()
     assert model.rowCount() == 0
     assert model.get_total_count() == 0
-    assert model.get_total_price() == 0
+    assert model.get_total_price() == 0 

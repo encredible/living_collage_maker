@@ -353,7 +353,6 @@ class FurnitureTableModel(QStandardItemModel):
     
     def __del__(self):
         try:
-            print("[FurnitureTableModel] 소멸자 호출됨")
             if hasattr(self, 'loading_threads') and self.loading_threads:
                 self.clear_furniture()
         except Exception as e:
