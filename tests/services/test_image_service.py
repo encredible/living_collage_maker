@@ -17,14 +17,14 @@ def image_service(tmp_path):
     # tmp_path는 pytest가 자동으로 정리하므로 shutil.rmtree는 필요 없음
 
 @pytest.fixture
-def dummy_pixmap():
+def dummy_pixmap(qtbot):
     """테스트용 QPixmap 객체를 생성합니다."""
     image = QImage(100, 100, QImage.Format.Format_RGB32)
     image.fill(QColor("red"))
     return QPixmap.fromImage(image)
 
 @pytest.fixture
-def large_dummy_pixmap():
+def large_dummy_pixmap(qtbot):
     """테스트용 큰 QPixmap 객체를 생성합니다 (optimize_image 테스트용)."""
     image = QImage(2000, 2000, QImage.Format.Format_RGB32)
     image.fill(QColor("blue"))

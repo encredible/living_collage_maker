@@ -4,10 +4,10 @@ from PyQt6.QtGui import (QPainter, QColor, QPen, QPixmap, QTransform, QImage)
 from src.ui.canvas import ImageAdjuster
 import weakref
 
-# ImageAdjuster 초기화 (테스트 시작 시 한 번만)
-@pytest.fixture(scope="session", autouse=True)
-def initialize_image_adjuster():
-    ImageAdjuster.initialize()
+# ImageAdjuster 초기화 (테스트 시작 시 한 번만) -> tests/ui/conftest.py로 이동
+# @pytest.fixture(scope="session", autouse=True)
+# def initialize_image_adjuster():
+#     ImageAdjuster.initialize()
 
 @pytest.fixture
 def dummy_pixmap_small():
@@ -16,7 +16,7 @@ def dummy_pixmap_small():
     image.fill(QColor("white"))
     return QPixmap.fromImage(image)
 
-def test_calculate_temperature_rgb_known_values():
+def test_calculate_temperature_rgb_known_values(initialize_image_adjuster):
     """calculate_temperature_rgb가 특정 색온도에 대해 예상 RGB 계수를 반환하는지 테스트합니다."""
     # 6500K (기준)
     r, g, b = ImageAdjuster.calculate_temperature_rgb(6500)
@@ -46,7 +46,7 @@ def test_calculate_temperature_rgb_known_values():
     assert b > 1.1 and b < 1.2, "10000K에서 B 채널 값 범위 오류"
     assert b > g > r, "10000K에서 RGB 채널 순서 오류 (B > G > R 예상)"
 
-def test_get_temperature_rgb_exact_lut_match(monkeypatch):
+def test_get_temperature_rgb_exact_lut_match(initialize_image_adjuster, monkeypatch):
     """룩업 테이블에 정확히 일치하는 온도가 입력되면 해당 LUT 값을 반환하는지 테스트합니다."""
     # ImageAdjuster가 초기화되어 _temperature_lut이 채워져 있다고 가정
     # 예시: 룩업 테이블에 3000K가 있고, 그 값이 (0.8, 0.9, 1.0)이라고 가정
@@ -58,7 +58,7 @@ def test_get_temperature_rgb_exact_lut_match(monkeypatch):
     assert ImageAdjuster.get_temperature_rgb(3000) == (0.8, 0.9, 1.0)
     assert ImageAdjuster.get_temperature_rgb(6500) == (1.0, 1.0, 1.0)
 
-def test_get_temperature_rgb_closest_lut_match(monkeypatch):
+def test_get_temperature_rgb_closest_lut_match(initialize_image_adjuster, monkeypatch):
     """룩업 테이블에 없는 값 중 가까운 값이 입력되면 가장 가까운 LUT 값을 반환하는지 테스트합니다."""
     # 실제 _init_temperature_lut 로직을 통해 계산된 값을 사용하는 것이 더 정확함
     # 여기서는 테스트를 위해 직접 값을 설정
@@ -79,7 +79,7 @@ def test_get_temperature_rgb_closest_lut_match(monkeypatch):
     assert ImageAdjuster.get_temperature_rgb(2400) == mock_lut[2500] # 2500K에 더 가까움
     assert ImageAdjuster.get_temperature_rgb(3100) == mock_lut[3000] # 3000K에 더 가까움
 
-def test_get_temperature_rgb_direct_calculation(monkeypatch):
+def test_get_temperature_rgb_direct_calculation(initialize_image_adjuster, monkeypatch):
     """룩업 테이블에 없는 먼 값이 입력되면 calculate_temperature_rgb를 직접 호출하는지 테스트합니다."""
     # 룩업 테이블이 비어있거나, 매우 다른 온도값인 경우
     mock_lut = {6500: (1.0, 1.0, 1.0)} # LUT에 값이 거의 없다고 가정
@@ -93,13 +93,13 @@ def test_get_temperature_rgb_direct_calculation(monkeypatch):
     
     assert ImageAdjuster.get_temperature_rgb(test_temp) == expected_direct_calc
 
-def test_apply_effects_null_pixmap():
+def test_apply_effects_null_pixmap(initialize_image_adjuster):
     """apply_effects에 Null QPixmap이 입력되면 Null QPixmap을 반환하는지 테스트합니다."""
     # ImageAdjuster.initialize()는 fixture에 의해 이미 호출됨
     result = ImageAdjuster.apply_effects(QPixmap(), 6500, 100, 100)
     assert result.isNull()
 
-def test_apply_effects_returns_copy(dummy_pixmap_small):
+def test_apply_effects_returns_copy(initialize_image_adjuster, dummy_pixmap_small):
     """apply_effects가 반환하는 QPixmap이 입력이나 캐시와 다른 복사본인지 테스트합니다."""
     pixmap = dummy_pixmap_small
     
@@ -118,7 +118,7 @@ def test_apply_effects_returns_copy(dummy_pixmap_small):
     # cache_key = (ImageAdjuster._image_id_map[pixmap], f"{pixmap.width()}x{pixmap.height()}", 6500, 100, 100)
     # assert result1 is not ImageAdjuster._effect_cache[cache_key] # 캐시된 객체 자체는 아님
 
-def test_apply_effects_basic_changes_non_numpy(monkeypatch, dummy_pixmap_small):
+def test_apply_effects_basic_changes_non_numpy(initialize_image_adjuster, monkeypatch, dummy_pixmap_small):
     """NumPy를 사용하지 않을 때, 효과 적용 시 이미지가 변경되는지 기본적으로 테스트합니다."""
     monkeypatch.setattr(ImageAdjuster, '_use_numpy', False)
     pixmap = dummy_pixmap_small.copy() # 원본 유지를 위해 복사본 사용
@@ -148,7 +148,7 @@ def test_apply_effects_basic_changes_non_numpy(monkeypatch, dummy_pixmap_small):
     c = result_bw_image.pixelColor(0,0)
     assert abs(c.red() - c.green()) < 5 and abs(c.green() - c.blue()) < 5, "흑백 변환 오류"
 
-def test_apply_effects_cache_usage(monkeypatch, dummy_pixmap_small, mocker):
+def test_apply_effects_cache_usage(initialize_image_adjuster, monkeypatch, dummy_pixmap_small, mocker):
     """apply_effects가 캐시를 올바르게 사용하는지 테스트합니다."""
     pixmap = dummy_pixmap_small
     monkeypatch.setattr(ImageAdjuster, '_effect_cache', {})
@@ -187,7 +187,7 @@ def test_apply_effects_cache_usage(monkeypatch, dummy_pixmap_small, mocker):
     assert result2_bytes == result1_bytes
     assert result2 is not result1
 
-def test_apply_effects_cache_eviction(monkeypatch, dummy_pixmap_small):
+def test_apply_effects_cache_eviction(initialize_image_adjuster, monkeypatch, dummy_pixmap_small):
     """캐시 크기 초과 시 오래된 항목이 제거되는지 테스트합니다."""
     pixmap = dummy_pixmap_small
     # 캐시 크기를 작게 설정
@@ -211,7 +211,7 @@ def test_apply_effects_cache_eviction(monkeypatch, dummy_pixmap_small):
     assert cache_key2 in ImageAdjuster._effect_cache # 새 항목이 있어야 함
     assert cache_key1 not in ImageAdjuster._effect_cache # 이전 항목은 제거되어야 함
 
-def test_apply_effects_basic_changes_numpy(monkeypatch, dummy_pixmap_small, mocker):
+def test_apply_effects_basic_changes_numpy(initialize_image_adjuster, monkeypatch, dummy_pixmap_small, mocker):
     """NumPy를 사용할 때, 효과 적용 시 이미지가 변경되는지 기본적으로 테스트합니다."""
     # NumPy가 사용 가능하다고 가정하고 _use_numpy를 True로 설정
     # 실제 ImageAdjuster.initialize()에서 NumPy를 찾지 못하면 _use_numpy는 False가 됨
