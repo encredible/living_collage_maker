@@ -1,10 +1,11 @@
 import weakref  # Python 내장 weakref 모듈 사용
 
-from PyQt6.QtCore import Qt, QSize, QMimeData, pyqtSignal, QThread, pyqtSlot
-from PyQt6.QtGui import QPixmap, QDrag, QStandardItemModel, QStandardItem
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
-                             QLabel, QLineEdit, QPushButton,
-                             QComboBox, QGridLayout, QTableView, QFrame)
+from PyQt6.QtCore import QMimeData, QSize, Qt, QThread, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QDrag, QPixmap, QStandardItem, QStandardItemModel
+from PyQt6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout,
+                             QLabel, QLineEdit, QTableView,
+                             QVBoxLayout, QWidget)
+
 from src.models.furniture import Furniture
 from src.services.image_service import ImageService
 from src.services.supabase_client import SupabaseClient

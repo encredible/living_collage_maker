@@ -1,11 +1,12 @@
 import sys
 
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter
-from PyQt6.QtCore import Qt, QTimer, QPoint
+from PyQt6.QtCore import QPoint, Qt, QTimer
 from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import (QApplication, QHBoxLayout, QMainWindow, QSplitter,
+                             QWidget)
 
 from ui.canvas import Canvas
-from ui.panels import ExplorerPanel, BottomPanel
+from ui.panels import BottomPanel, ExplorerPanel
 
 
 class MainWindow(QMainWindow):

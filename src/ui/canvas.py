@@ -1,20 +1,21 @@
 import datetime
 import json
 import os
-import time
-import weakref
-from typing import Union # typing.Union 임포트 추가
+from typing import Union  # typing.Union 임포트 추가
 
-from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, QThread, pyqtSignal, QSize, QBuffer, QIODevice
-from PyQt6.QtGui import (QPainter, QColor, QPen, QPixmap, QTransform, QImage, QBrush, QShortcut, QKeySequence, QGuiApplication)
-from PyQt6.QtWidgets import (QWidget, QLabel, QPushButton,
-                             QMenu, QMessageBox, QFileDialog, QSlider, QHBoxLayout,
-                             QDialog, QGroupBox, QVBoxLayout, QGraphicsItem, QGraphicsPixmapItem, QGraphicsSceneMouseEvent, QGraphicsSceneWheelEvent, QGraphicsDropShadowEffect, QGraphicsView, QGraphicsScene, QApplication)
+from PyQt6.QtCore import (QPoint, QRect, Qt,
+                          QThread, QTimer)
+from PyQt6.QtGui import (QColor, QGuiApplication, QPainter, QPen, QPixmap, QTransform)
+from PyQt6.QtWidgets import (QDialog, QFileDialog,
+                             QGroupBox, QHBoxLayout, QLabel, QMenu,
+                             QMessageBox, QPushButton, QSlider, QVBoxLayout,
+                             QWidget)
+
 from src.models.furniture import Furniture
 from src.services.image_service import ImageService
 from src.services.supabase_client import SupabaseClient
 from src.ui.dialogs import CanvasSizeDialog
-from src.ui.panels import ExplorerPanel, BottomPanel
+from src.ui.panels import BottomPanel
 from src.ui.utils import ImageAdjuster, ImageProcessor
 
 
@@ -100,7 +101,6 @@ class FurnitureItem(QWidget):
            성공 시 QPixmap 객체를, 실패 시 None 또는 에러가 표시된 QPixmap을 반환 (내부적으로 self.pixmap도 설정).
            반환된 QPixmap은 __init__에서 self.original_pixmap의 후보가 됩니다.
         """
-        pixmap_candidate_for_original = None
         try:
             image_data = self.supabase.get_furniture_image(self.furniture.image_filename)
             downloaded_pixmap = self.image_service.download_and_cache_image(

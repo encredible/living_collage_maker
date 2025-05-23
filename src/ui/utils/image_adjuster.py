@@ -1,6 +1,6 @@
 import weakref
-from PyQt6.QtGui import QPixmap, QImage, QColor
-from PyQt6.QtCore import Qt
+
+from PyQt6.QtGui import QColor, QImage, QPixmap
 
 
 class ImageAdjuster:

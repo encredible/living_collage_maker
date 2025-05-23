@@ -1,5 +1,6 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QSpinBox, QPushButton)
+from PyQt6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QPushButton,
+                             QSpinBox, QVBoxLayout)
+
 
 class CanvasSizeDialog(QDialog):
     def __init__(self, parent=None):
