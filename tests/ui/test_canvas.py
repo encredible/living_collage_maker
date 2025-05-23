@@ -375,8 +375,9 @@ def test_canvas_save_collage_cancelled_dialog(mock_get_save_file_name, canvas_wi
 @patch('json.load')
 @patch('src.ui.canvas.SupabaseClient')
 @patch('src.ui.canvas.ImageService')
+@patch('src.ui.canvas.QMessageBox.information')
 def test_canvas_load_collage_successful(
-    MockImageService, MockSupabaseClient, mock_json_load, mock_builtin_open, mock_get_open_file_name, 
+    MockQMessageBoxInfo, MockImageService, MockSupabaseClient, mock_json_load, mock_builtin_open, mock_get_open_file_name, 
     canvas_widget, mock_furniture_data_for_canvas, qtbot, mocker
 ):
     """콜라주 불러오기 기능 테스트 (성공 케이스)"""
@@ -409,7 +410,6 @@ def test_canvas_load_collage_successful(
     dummy_pixmap = QPixmap(100,100)
     mock_load_image.return_value = dummy_pixmap
     
-    mock_show_info = mocker.patch.object(canvas_widget, '_show_information_message')
     mock_update_bottom_panel = mocker.patch.object(canvas_widget, 'update_bottom_panel')
     
     mock_window = MagicMock()
@@ -434,7 +434,7 @@ def test_canvas_load_collage_successful(
     assert loaded_item.size() == QSize(120, 180)
 
     mock_update_bottom_panel.assert_called_once()
-    mock_show_info.assert_called_once()
+    MockQMessageBoxInfo.assert_called_once_with(canvas_widget, "성공", "콜라주가 성공적으로 불러와졌습니다.")
     mock_window.setMinimumSize.assert_called()
     mock_window.resize.assert_called()
 
@@ -499,8 +499,9 @@ def test_canvas_load_collage_missing_keys(mock_json_load, mock_builtin_open, moc
 @patch('json.load')
 @patch('src.ui.canvas.SupabaseClient')
 @patch('src.ui.canvas.ImageService')
+@patch('src.ui.canvas.QMessageBox.warning')
 def test_canvas_load_collage_furniture_not_found_in_db(
-    MockImageService, MockSupabaseClient, mock_json_load, mock_builtin_open, mock_get_open_file_name, 
+    MockQMessageBoxWarning, MockImageService, MockSupabaseClient, mock_json_load, mock_builtin_open, mock_get_open_file_name, 
     canvas_widget, mocker
 ):
     """콜라주 불러오기 시 JSON 내 가구 ID가 DB에 없을 때의 동작을 테스트합니다."""
@@ -539,7 +540,6 @@ def test_canvas_load_collage_furniture_not_found_in_db(
     ]
     mock_supabase_instance.get_furniture_list.return_value = db_furniture_list
     
-    mock_show_warning = mocker.patch.object(canvas_widget, '_show_warning_message')
     mock_show_critical = mocker.patch.object(canvas_widget, '_show_critical_message')
     mocker.patch.object(FurnitureItem, 'load_image', return_value=QPixmap(10,10))
 
@@ -557,8 +557,10 @@ def test_canvas_load_collage_furniture_not_found_in_db(
     mock_json_load.assert_called_once()
     mock_supabase_instance.get_furniture_list.assert_called_once_with() 
     
-    mock_show_warning.assert_called_once_with(
-        "경고", "콜라주에 포함된 가구(ID: non-existent-id)를 현재 데이터베이스에서 찾을 수 없습니다. 해당 아이템은 제외됩니다."
+    MockQMessageBoxWarning.assert_called_once_with(
+        canvas_widget,
+        "경고", 
+        "콜라주에 포함된 가구(ID: non-existent-id)를 현재 데이터베이스에서 찾을 수 없습니다. 해당 아이템은 제외됩니다."
     )
     mock_show_critical.assert_not_called()
 
