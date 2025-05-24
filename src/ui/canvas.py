@@ -17,8 +17,10 @@ from src.ui.utils import ImageAdjuster
 from src.ui.widgets import FurnitureItem
 
 
+
 class Canvas(QWidget):
-    CANVAS_COLOR = QColor("#e0e0e0") # 클래스 변수로 CANVAS_COLOR 추가
+    CANVAS_MIN_HEIGHT = 200
+    CANVAS_MIN_WIDTH = 300
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -44,7 +46,7 @@ class Canvas(QWidget):
         
         # 캔버스 영역 (실제 가구가 배치되는 곳, 이 위젯의 크기를 사용자가 조절)
         self.canvas_area = QWidget() # QWidget으로 유지
-        self.canvas_area.setMinimumSize(300, 200) # canvas_area의 최소 크기
+        self.canvas_area.setMinimumSize(self.CANVAS_MIN_WIDTH, self.CANVAS_MIN_HEIGHT) # canvas_area의 최소 크기
         self.canvas_area.setStyleSheet("""
             QWidget { /* canvas_area 스타일 */
                 background-color: white;
@@ -65,6 +67,7 @@ class Canvas(QWidget):
         # 캔버스 영역 클릭 이벤트 설정 (canvas_area에 대해)
         self.canvas_area.mousePressEvent = self.canvas_mouse_press_event
         
+
         # 키보드 포커스 설정 (키 이벤트 수신을 위해)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     
@@ -249,7 +252,7 @@ class Canvas(QWidget):
                 
                 canvas_width = collage_data["canvas"]["width"]
                 canvas_height = collage_data["canvas"]["height"]
-                # canvas_area 크기 설정 (이때 eventFilter가 호출되어 Canvas 크기도 조절됨)
+                # 저장된 콜라주를 불러올 때는 정확한 크기 유지
                 self.canvas_area.setFixedSize(canvas_width, canvas_height)
                 self.is_new_collage = False
                 
@@ -370,28 +373,71 @@ class Canvas(QWidget):
                 self._show_critical_message("오류", f"콜라주 불러오기 중 예기치 않은 오류가 발생했습니다: {str(e)}")
     
     def create_new_collage(self):
-        """새 콜라주를 생성합니다."""
+        """새 콜라주를 생성합니다. 앱을 완전히 초기화합니다."""
         dialog = CanvasSizeDialog(self)
         if dialog.exec():
             width, height = dialog.get_size()
             
-            # 기존 가구 아이템 제거
+            # 1. 기존 가구 아이템 완전 제거
             for item in self.furniture_items:
+                item.setParent(None)  # 부모 관계 해제
                 item.deleteLater()
             self.furniture_items.clear()
-            
             self.selected_items.clear()
             
-            # canvas_area 크기 설정 (이때 eventFilter가 호출되어 Canvas 크기도 조절됨)
-            self.canvas_area.setFixedSize(width, height)
-            self.is_new_collage = False # <--- 여기를 False로 수정
+            # 2. 캔버스 영역 완전 재생성
+            old_canvas_area = self.canvas_area
+            old_canvas_area.setParent(None)
+            old_canvas_area.deleteLater()
             
-            # self.canvas_area.update() # 필요시 canvas_area 직접 업데이트
-            # self.update() # Canvas 업데이트 (paintEvent 호출하여 크기 텍스트 등 갱신)
+            # 새 캔버스 영역 생성
+            self.canvas_area = QWidget()
+            # 최소 크기는 기본값만 설정 (리사이즈 가능하도록)
+            print(f"[새 콜라주] 요청된 크기: {width}x{height}")
+            print(f"[새 콜라주] 기본 최소 크기 설정: {self.CANVAS_MIN_WIDTH}x{self.CANVAS_MIN_HEIGHT}")
             
-            # 하단 패널 업데이트
+            self.canvas_area.setMinimumSize(self.CANVAS_MIN_WIDTH, self.CANVAS_MIN_HEIGHT)
+            self.canvas_area.resize(width, height)
+            
+            print(f"[새 콜라주] 최종 캔버스 크기: {self.canvas_area.width()}x{self.canvas_area.height()}")
+            print(f"[새 콜라주] 최종 최소 크기: {self.canvas_area.minimumWidth()}x{self.canvas_area.minimumHeight()}")
+            
+            self.canvas_area.setStyleSheet("""
+                QWidget { /* canvas_area 스타일 */
+                    background-color: white;
+                    border: 2px solid #2C3E50; /* 작업 영역 테두리 */
+                }
+            """)
+            
+            # 3. 레이아웃에 새 캔버스 영역 추가
+            layout = self.layout()
+            layout.addWidget(self.canvas_area)
+            
+            # 4. 이벤트 핸들러 재설정
+            self.canvas_area.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            self.canvas_area.customContextMenuRequested.connect(self.show_context_menu)
+            self.canvas_area.mousePressEvent = self.canvas_mouse_press_event
+            
+            # 5. 상태 초기화
+            self.is_new_collage = True
+            
+            # 6. UI 강제 업데이트
+            self.canvas_area.show()
+            self.update()
+            
+            # 7. 하단 패널 업데이트
             self.update_bottom_panel()
-            self.is_new_collage = True # 새 콜라주 상태로 설정
+            
+            # 8. 메인 윈도우에 초기화 알림
+            main_window = self.window()
+            if hasattr(main_window, 'initialize_canvas_coordinates'):
+                main_window.initialize_canvas_coordinates()
+            
+            # 9. 캔버스 크기 변경 알림
+            if hasattr(main_window, 'canvas_size_changed'):
+                main_window.canvas_size_changed()
+            
+            print(f"[새 콜라주] 캔버스 완전 초기화 완료: {width}x{height}")
 
     def _show_warning_message(self, title: str, message: str):
         """경고 메시지 박스를 표시하는 내부 헬퍼 메소드."""
@@ -573,8 +619,10 @@ class Canvas(QWidget):
         if dialog.exec():
             new_width, new_height = dialog.get_canvas_size()
             
-            # 캔버스 크기 변경
-            self.canvas_area.setFixedSize(new_width, new_height)
+            # 캔버스 크기 변경 (setFixedSize 대신 resize 사용)
+            self.canvas_area.resize(new_width, new_height)
+            # 최소 크기는 기본값 유지 (리사이즈 가능하도록)
+            self.canvas_area.setMinimumSize(self.CANVAS_MIN_WIDTH, self.CANVAS_MIN_HEIGHT)
             
             # 캔버스 밖으로 벗어난 가구들 처리
             self.handle_furniture_out_of_bounds()
@@ -633,3 +681,20 @@ class Canvas(QWidget):
                 message = f"{len(moved_items)}개의 가구가 캔버스 내로 이동되었습니다."
             
             self._show_information_message("가구 위치 조정", message)
+
+    def resizeEvent(self, event):
+        """Canvas 크기 변경 시 호출됩니다."""
+        super().resizeEvent(event)
+        
+        # 새 콜라주 상태일 때는 윈도우 크기에 맞춰 동적 조정
+        if self.is_new_collage and hasattr(self, 'canvas_area') and self.canvas_area:
+            # 캔버스 영역을 Canvas 크기에 맞춰 조정 (여백 고려)
+            margin = 20  # 여백
+            new_width = max(self.CANVAS_MIN_WIDTH, event.size().width() - margin)
+            new_height = max(self.CANVAS_MIN_HEIGHT, event.size().height() - margin)
+            
+            # 현재 크기와 다를 때만 조정
+            if (self.canvas_area.width() != new_width or 
+                self.canvas_area.height() != new_height):
+                self.canvas_area.resize(new_width, new_height)
+                print(f"[Canvas 리사이즈] 캔버스 영역 크기 조정: {new_width}x{new_height}")

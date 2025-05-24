@@ -137,6 +137,20 @@ class MainWindow(QMainWindow):
         # 현재 지오메트리를 다음 비교를 위해 저장
         self.previous_canvas_global_top_left = current_canvas_global_top_left # QRect는 값 타입처럼 동작하지만, 명시적 복사가 안전할 수 있음
 
+    def canvas_size_changed(self):
+        """캔버스 크기가 변경되었을 때 호출됩니다."""
+        print("[MainWindow] 캔버스 크기 변경 감지")
+        
+        # 캔버스 좌표 시스템 재초기화
+        if hasattr(self, 'previous_canvas_global_top_left'):
+            self.previous_canvas_global_top_left = None
+        
+        # 좌표 시스템 다시 초기화
+        QTimer.singleShot(100, self.initialize_canvas_coordinates)
+        
+        # UI 강제 업데이트
+        self.update()
+
     def setup_menubar(self):
         menubar = self.menuBar()
         file_menu = menubar.addMenu('파일')
