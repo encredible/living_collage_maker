@@ -4,7 +4,8 @@ from datetime import datetime
 from io import BytesIO
 from typing import List
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal, QBuffer, QIODevice
+from PyQt6.QtGui import QImageWriter
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from src.ui.canvas import FurnitureItem
@@ -339,7 +340,62 @@ class PdfExportService(QObject):
                 # 가구 제목 (번호 포함)
                 furniture_name = furniture.name or "이름 없음"
                 story.append(Paragraph(f"{i}. {furniture_name}", furniture_title_style))
-                
+
+                # Add furniture image using item.pixmap
+                try:
+                    pixmap = item.pixmap
+                    if pixmap and not pixmap.isNull():
+                        # Convert QPixmap to PNG in BytesIO
+                        byte_array = BytesIO()
+                        buffer = QBuffer()
+                        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+                        writer = QImageWriter(buffer, b"PNG")
+                        if writer.write(pixmap.toImage()): # Convert QPixmap to QImage
+                            buffer.seek(0)
+                            byte_array.write(buffer.data())
+                            byte_array.seek(0)
+                            buffer.close()
+
+                            # Determine image dimensions for PDF
+                            max_img_width = 50 * mm
+                            max_img_height = 50 * mm
+                            
+                            original_pixmap_width = pixmap.width()
+                            original_pixmap_height = pixmap.height()
+
+                            if original_pixmap_height == 0: # Avoid division by zero
+                                aspect_ratio = 1
+                            else:
+                                aspect_ratio = original_pixmap_width / original_pixmap_height
+
+                            display_width = max_img_width
+                            display_height = display_width / aspect_ratio
+
+                            if display_height > max_img_height:
+                                display_height = max_img_height
+                                display_width = display_height * aspect_ratio
+                            
+                            # Ensure display_width is not zero if aspect_ratio led to it
+                            if display_width == 0 and original_pixmap_width > 0:
+                                display_width = 1 # Minimal width to avoid error, aspect ratio might be extreme
+                            if display_height == 0 and original_pixmap_height > 0:
+                                display_height = 1 # Minimal height
+
+                            if display_width > 0 and display_height > 0:
+                                img = Image(byte_array, width=display_width, height=display_height)
+                                story.append(img)
+                                story.append(Spacer(1, 5*mm)) # Add some space after the image
+                            else:
+                                print(f"Skipping image for item {i} due to zero dimension after aspect ratio calculation.")
+
+                        else:
+                            print(f"Failed to write pixmap to buffer for item {i}")
+                            buffer.close()
+                    else:
+                        print(f"Pixmap for item {i} is null or invalid.")
+                except Exception as e:
+                    print(f"Error processing image for item {i} ({furniture_name}): {e}")
+
                 # 기본 정보 섹션
                 info_lines = []
                 
