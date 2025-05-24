@@ -59,6 +59,7 @@ class FurnitureItem(QWidget):
         # 드래그 관련 속성 초기화
         self.old_pos = None
         self.drag_start_pos = None  # 드래그 시작 시 위젯 위치
+        self.resize_mouse_start_global_pos = None  # 리사이즈 시작 시 글로벌 마우스 위치
         
         # 이미지 조정 다이얼로그의 슬라이더 값 변경 디바운싱용 타이머
         self.update_timer = QTimer(self)
@@ -284,7 +285,7 @@ class FurnitureItem(QWidget):
                 self.active_handle = handle  # 활성화된 핸들 저장
                 self.original_size_on_resize = self.size() # 리사이즈 시작 시점의 크기 저장
                 self.original_pos_on_resize = self.pos()  # 리사이즈 시작 시점의 위치 저장
-                self.resize_mouse_start_pos = event.pos() # 리사이즈 시작 시점의 마우스 위치 저장
+                self.resize_mouse_start_global_pos = event.globalPosition().toPoint()  # 리사이즈 시작 시 글로벌 마우스 위치 저장
                 self.maintain_aspect_ratio_on_press = bool(QGuiApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
                 self.setCursor(self.get_resize_cursor(handle))  # 커서 변경
             else:
@@ -304,8 +305,16 @@ class FurnitureItem(QWidget):
             # Shift 키 상태를 드래그 시작 시점 기준으로 설정
             self.maintain_aspect_ratio = self.maintain_aspect_ratio_on_press
             
-            # 마우스 이동량 계산
-            delta = event.pos() - self.resize_mouse_start_pos
+            # 마우스 이동량 계산 (글로벌 좌표 기준)
+            current_global_pos = event.globalPosition().toPoint()
+            if self.resize_mouse_start_global_pos is not None:
+                delta = current_global_pos - self.resize_mouse_start_global_pos
+            elif hasattr(self, 'resize_mouse_start_pos') and self.resize_mouse_start_pos is not None:
+                # 테스트 호환성을 위한 로컬 좌표 사용 (기존 방식으로 폴백)
+                delta = event.pos() - self.resize_mouse_start_pos
+            else:
+                # 비정상적인 상황에서의 기본값
+                delta = QPoint(0, 0)
             
             # 핸들에 따른 크기와 위치 계산
             new_x = self.original_pos_on_resize.x()
