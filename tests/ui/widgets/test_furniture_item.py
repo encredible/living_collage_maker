@@ -2,7 +2,7 @@ from unittest.mock import patch, ANY, MagicMock
 
 import pytest
 from PyQt6.QtCore import QBuffer, QIODevice, QPoint, Qt, QPointF, QEvent
-from PyQt6.QtGui import QPixmap, QColor, QContextMenuEvent, QMouseEvent
+from PyQt6.QtGui import QPixmap, QColor, QContextMenuEvent, QMouseEvent, QAction
 from PyQt6.QtWidgets import QMenu, QWidget
 
 from src.models.furniture import Furniture  # Furniture 모델 임포트
@@ -445,91 +445,65 @@ def test_furniture_item_resize_aspect_ratio_locked(MockImageService, MockSupabas
 
 @patch('src.ui.widgets.furniture_item.SupabaseClient')
 @patch('src.ui.widgets.furniture_item.ImageService')
-# @patch('src.ui.widgets.QMenu') # QMenu 모의 처리는 FurnitureItem 내부 처리 방식 변경으로 불필요
 def test_furniture_item_context_menu_actions(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
     """FurnitureItem 컨텍스트 메뉴 액션 (삭제) 테스트합니다."""
     mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
     MockImageService.return_value.download_and_cache_image.return_value = dummy_qpixmap
     MockSupabaseClient.return_value.get_furniture_image.return_value = b"fake_image_data"
-    mock_supabase_instance = MockSupabaseClient.return_value # 이 라인 추가
-    mock_supabase_instance._image_cache = mocker.MagicMock() # 경고 해결
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance._image_cache = mocker.MagicMock()
 
-    canvas_widget = Canvas() # Canvas 인스턴스화
-    # FurnitureItem 생성 시 parent 인자로 canvas_widget.canvas_area 전달
-    item = FurnitureItem(furniture_obj, parent=canvas_widget.canvas_area) 
+    canvas_widget = Canvas()
+    item = FurnitureItem(furniture_obj, parent=canvas_widget.canvas_area)
     item.pixmap = dummy_qpixmap.copy()
     item.original_pixmap = dummy_qpixmap.copy()
     item.setFixedSize(dummy_qpixmap.size())
     item.move(10, 10)
     item.show()
     canvas_widget.furniture_items.append(item)
-    canvas_widget.select_furniture_item(item) # 아이템을 선택된 상태로 만듦 (Canvas 메소드 사용)
-    qtbot.addWidget(canvas_widget) # Canvas 위젯을 qtbot에 추가
+    canvas_widget.select_furniture_item(item)
+    qtbot.addWidget(canvas_widget)
 
-    # 1. 삭제 테스트
-    # FurnitureItem의 deleteLater를 spy
-    spy_delete_later = mocker.spy(item, 'deleteLater')
-    
-    # 컨텍스트 메뉴 요청 (마우스 오른쪽 버튼 클릭)
-    # QMenu.exec()는 선택된 QAction을 반환. 이를 모의하여 delete_action이 선택된 것처럼 만듦.
-    # FurnitureItem.contextMenuEvent 내부에서 QMenu를 생성하므로, QMenu를 mock할 필요는 없음.
-    # 대신, menu.exec()의 반환 값을 제어할 수 있다면 좋겠지만, 여기서는 실제 클릭을 시뮬레이션.
-    # FurnitureItem의 contextMenuEvent 내부에서 menu.exec()의 반환값을 기준으로 분기하므로,
-    # QMenu.exec()를 패치하여 특정 QAction을 반환하도록 해야 함.
+    # spy_remove_from_canvas = mocker.spy(item, 'deleteLater') # mocker.spy 대신 MagicMock으로 대체
+    spy_remove_from_canvas = mocker.spy(canvas_widget, 'remove_furniture_item')
 
-    # contextMenuEvent가 호출될 때 QMenu().exec()가 delete_action을 반환하도록 설정
-    # 이를 위해 QMenu를 mock하고, addAction도 mock하여 delete_action을 특정 mock 객체로 만듦
     mock_menu = mocker.MagicMock(spec=QMenu)
-    mock_delete_action = mocker.MagicMock(text="삭제") # 실제 action의 text와 동일하게
-    mock_flip_action = mocker.MagicMock(text="좌우 반전")
-    mock_adjust_action = mocker.MagicMock(text="이미지 조정")
+    delete_action = QAction("삭제")
+    # delete_action.triggered.connect(item.deleteLater) # 이 줄은 실제 코드 변경으로 대체됨
 
-    def side_effect_add_action(text):
-        if text == "삭제":
-            return mock_delete_action
-        elif text == "좌우 반전":
-            return mock_flip_action
-        elif text == "이미지 조정":
-            return mock_adjust_action
-        return mocker.MagicMock() # 기타 액션
+    def add_action_side_effect(text_or_icon, text_if_icon=None):
+        actual_text = text_or_icon if isinstance(text_or_icon, str) else text_if_icon
+        if actual_text == "삭제":
+            return delete_action # 실제 QAction 객체 반환
+        # 다른 액션들은 간단한 모의 객체로 처리
+        return QAction(actual_text) # 다른 액션들도 실제 객체로 반환 (필요시 spy 추가)
 
-    mock_menu.addAction.side_effect = side_effect_add_action
-    mock_menu.exec.return_value = mock_delete_action # exec_ 대신 exec 사용 (PyQt6)
+    mock_menu.addAction.side_effect = add_action_side_effect
+    # menu.exec()는 선택된 액션을 반환한다고 가정
+    mock_menu.exec.return_value = delete_action 
 
-    # qtbot.mouseClick으로 contextMenuEvent를 간접적으로 호출하는 대신,
-    # QMenu patching이 적용된 상태에서 contextMenuEvent를 직접 호출하고 event 객체를 전달합니다.
-    # 이렇게 하면 QMenu().exec()가 mock_delete_action을 반환하는 것을 더 확실하게 제어할 수 있습니다.
-    mock_event = mocker.MagicMock(spec=QContextMenuEvent) # QContextMenuEvent 사용
-    mock_event.globalPos.return_value = QPoint(10, 10) # 임의의 전역 위치
+    mock_event = mocker.MagicMock(spec=QContextMenuEvent)
+    mock_event.globalPos.return_value = QPoint(10, 10)
 
-    with patch('src.ui.widgets.furniture_item.QMenu', return_value=mock_menu) as mock_qmenu_class:
-        item.contextMenuEvent(mock_event) # 직접 호출
+    with patch('src.ui.widgets.furniture_item.QMenu', return_value=mock_menu):
+        # contextMenuEvent를 호출하면 내부적으로 menu.exec()가 호출되고, 
+        # 그 결과로 delete_action.triggered.emit()이 호출되어야 함.
+        # 하지만 여기서는 exec()의 반환값만 설정했으므로, 직접 triggered를 emit 해야 함.
+        item.contextMenuEvent(mock_event) # 이 호출은 menu를 설정함
+    
+    # menu.exec()가 delete_action을 반환했다고 가정하고, 해당 액션의 triggered 시그널을 발생시킴
+    # 이 부분이 실제 QMenu의 동작과 가장 유사하게 만듦
+    if mock_menu.exec.return_value == delete_action:
+        # 실제 FurnitureItem.contextMenuEvent가 실행되도록 함
+        # delete_action.triggered.emit() # 이 줄은 실제 컨텍스트 메뉴 실행으로 대체
+        # item.contextMenuEvent 내부에서 canvas_widget.remove_furniture_item(item)이 호출될 것
+        # 이 부분을 명시적으로 호출하기 보다는, contextMenuEvent가 올바르게 실행되도록 하는 것이 중요
+        # 테스트에서는 contextMenuEvent가 호출된 후, 내부 로직에 의해 remove_furniture_item이 호출되는 것을 검증
+        pass # delete_action.triggered.emit() 대신 contextMenuEvent가 내부적으로 처리하도록 둠
 
-    # deleteLater 호출 확인
-    spy_delete_later.assert_called_once()
-    # Canvas의 리스트에서 제거되었는지 확인
+    # item.contextMenuEvent(mock_event) 호출은 이미 위에서 했으므로, 여기서는 검증만
+    spy_remove_from_canvas.assert_called_once_with(item)
     assert item not in canvas_widget.furniture_items
-
-    # "맨 앞으로 보내기", "맨 뒤로 보내기"는 FurnitureItem의 컨텍스트 메뉴에 없으므로 관련 테스트 삭제
-    # # 테스트를 위해 아이템 다시 추가 및 선택 (다른 액션 테스트용)
-    # canvas_widget.furniture_items.append(item)
-    # canvas_widget.select_furniture_item(item) # current_selected_item을 직접 할당하는 대신 이 메소드 사용 권장
-    # 
-    # # 맨 앞으로 가져오기 테스트
-    # # 사용자가 '맨 앞으로 보내기'를 선택했다고 가정
-    # if canvas_widget.current_selected_item: # current_selected_item이 있는지 확인
-    #     # Canvas에 해당 기능이 실제로 있는지 확인 필요 (현재는 없음)
-    #     # spy_bring_to_front.assert_called_once() 
-    #     pass # Canvas에 bring_selected_item_to_front 메소드가 없으므로 테스트 불가
-    # spy_bring_to_front.reset_mock()
-    # 
-    # # 맨 뒤로 보내기 테스트
-    # # 사용자가 '맨 뒤로 보내기'를 선택했다고 가정
-    # if canvas_widget.current_selected_item:
-    #     # Canvas에 해당 기능이 실제로 있는지 확인 필요 (현재는 없음)
-    #     # spy_send_to_back.assert_called_once()
-    #     pass # Canvas에 send_selected_item_to_back 메소드가 없으므로 테스트 불가
-    # spy_send_to_back.reset_mock() 
 
 @patch('src.ui.widgets.furniture_item.SupabaseClient')
 @patch('src.ui.widgets.furniture_item.ImageService')
@@ -538,12 +512,12 @@ def test_furniture_item_context_menu_flip_action(MockImageService, MockSupabaseC
     mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
     MockImageService.return_value.download_and_cache_image.return_value = dummy_qpixmap
     MockSupabaseClient.return_value.get_furniture_image.return_value = b"fake_image_data"
-    mock_supabase_instance = MockSupabaseClient.return_value # 이 라인 추가
-    mock_supabase_instance._image_cache = mocker.MagicMock() # 경고 해결
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance._image_cache = mocker.MagicMock()
 
     canvas_widget = Canvas()
     item = FurnitureItem(furniture_obj, parent=canvas_widget.canvas_area)
-    item.pixmap = dummy_qpixmap.copy() # 원본 QPixmap (변환 전)
+    item.pixmap = dummy_qpixmap.copy()
     item.original_pixmap = dummy_qpixmap.copy()
     item.setFixedSize(dummy_qpixmap.size())
     item.move(10, 10)
@@ -552,59 +526,66 @@ def test_furniture_item_context_menu_flip_action(MockImageService, MockSupabaseC
     canvas_widget.select_furniture_item(item)
     qtbot.addWidget(canvas_widget)
 
-    assert item.is_flipped is False # 초기 상태는 반전되지 않음
+    assert item.is_flipped is False
 
-    # QPixmap.transformed와 update 메소드를 spy
-    # spy_transformed = mocker.spy(item.pixmap, 'transformed') # 이 방식 대신 QPixmap.transformed를 patch
     spy_update = mocker.spy(item, 'update')
+    mock_item_changed_slot = MagicMock()
+    item.item_changed.connect(mock_item_changed_slot)
 
-    # 컨텍스트 메뉴 설정 (flip_action이 선택되도록)
     mock_menu = mocker.MagicMock(spec=QMenu)
-    mock_delete_action = mocker.MagicMock(text="삭제")
-    mock_flip_action = mocker.MagicMock(text="좌우 반전") # 실제 action의 text와 동일하게
-    mock_adjust_action = mocker.MagicMock(text="이미지 조정")
+    flip_action = QAction("좌우 반전")
+    flip_action.triggered.connect(item.flip_item_and_emit_signal)
 
-    def side_effect_add_action(text):
-        if text == "삭제":
-            return mock_delete_action
-        elif text == "좌우 반전":
-            return mock_flip_action
-        elif text == "이미지 조정":
-            return mock_adjust_action
-        return mocker.MagicMock()
+    def add_action_side_effect(text_or_icon, text_if_icon=None):
+        actual_text = text_or_icon if isinstance(text_or_icon, str) else text_if_icon
+        if actual_text == "좌우 반전":
+            return flip_action
+        return QAction(actual_text)
 
-    mock_menu.addAction.side_effect = side_effect_add_action
-    mock_menu.exec.return_value = mock_flip_action # '좌우 반전' 액션이 선택된 것처럼 설정
+    mock_menu.addAction.side_effect = add_action_side_effect
+    mock_menu.exec.return_value = flip_action
 
     mock_event = mocker.MagicMock(spec=QContextMenuEvent)
     mock_event.globalPos.return_value = QPoint(10, 10)
 
-    with patch('src.ui.widgets.furniture_item.QMenu', return_value=mock_menu), \
-         patch('PyQt6.QtGui.QPixmap.transformed') as mock_transformed:
-        # transformed가 새 QPixmap 객체를 반환하도록 설정
-        mock_transformed.return_value = dummy_qpixmap.copy() # 내용을 유지하면서 새 객체 반환
-        item.contextMenuEvent(mock_event)
+    transformed_pixmap_mock = mocker.MagicMock(spec=QPixmap)
+    transformed_pixmap_mock.isNull = MagicMock(return_value=False)
 
-    # pixmap.transformed가 호출되었는지 확인
-    mock_transformed.assert_called_once()
-    # is_flipped 상태가 True로 변경되었는지 확인
+    # 첫 번째 flip
+    with patch('src.ui.widgets.furniture_item.QMenu', return_value=mock_menu):
+        # PyQt6.QtGui.QPixmap.transformed가 transformed_pixmap_mock (MagicMock 객체)을 반환하도록 설정
+        with patch('PyQt6.QtGui.QPixmap.transformed', return_value=transformed_pixmap_mock) as patched_transformed_global:
+            item.contextMenuEvent(mock_event) 
+            # item.pixmap.transformed(...)가 호출되었고, 그 결과로 item.pixmap이 transformed_pixmap_mock으로 설정됨
+            patched_transformed_global.assert_called_once_with(mocker.ANY) 
+            assert item.pixmap is transformed_pixmap_mock 
+
     assert item.is_flipped is True
-    # update가 호출되어 위젯이 다시 그려졌는지 확인
     spy_update.assert_called_once()
+    mock_item_changed_slot.assert_called_once()
 
-    # 한 번 더 호출하여 원래대로 돌아오는지 확인
-    mock_menu.exec.return_value = mock_flip_action # 다시 flip_action 선택
-    mock_transformed.reset_mock()
+    # 두 번째 flip (원상 복구)
     spy_update.reset_mock()
+    mock_item_changed_slot.reset_mock()
+    # item.is_flipped는 현재 True
 
-    with patch('src.ui.widgets.furniture_item.QMenu', return_value=mock_menu), \
-         patch('PyQt6.QtGui.QPixmap.transformed') as mock_transformed_again:
-        mock_transformed_again.return_value = dummy_qpixmap.copy()
-        item.contextMenuEvent(mock_event)
+    # 이제 item.pixmap은 transformed_pixmap_mock (MagicMock 객체)임.
+    # 이 MagicMock 객체의 'transformed' 메서드가 호출될 것을 예상하고, 그 반환값을 설정.
+    second_flip_transformed_return = dummy_qpixmap.copy()
+    transformed_pixmap_mock.transformed = MagicMock(return_value=second_flip_transformed_return)
 
-    mock_transformed_again.assert_called_once()
-    assert item.is_flipped is False # 다시 False로
+    with patch('src.ui.widgets.furniture_item.QMenu', return_value=mock_menu):
+        # item.contextMenuEvent -> item.flip_item_and_emit_signal -> item.pixmap.transformed 호출
+        # 이때 item.pixmap은 transformed_pixmap_mock이므로, 위에서 설정한 MagicMock(transformed_pixmap_mock.transformed)이 호출됨
+        item.contextMenuEvent(mock_event) 
+            
+    transformed_pixmap_mock.transformed.assert_called_once_with(mocker.ANY)
+    # item.pixmap이 second_flip_transformed_return으로 설정되었는지 확인
+    assert item.pixmap is second_flip_transformed_return 
+    
+    assert item.is_flipped is False
     spy_update.assert_called_once()
+    mock_item_changed_slot.assert_called_once()
 
 @patch('src.ui.widgets.furniture_item.SupabaseClient')
 @patch('src.ui.widgets.furniture_item.ImageService')
@@ -613,13 +594,13 @@ def test_furniture_item_context_menu_adjust_action(MockImageService, MockSupabas
     mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
     MockImageService.return_value.download_and_cache_image.return_value = dummy_qpixmap
     MockSupabaseClient.return_value.get_furniture_image.return_value = b"fake_image_data"
-    mock_supabase_instance = MockSupabaseClient.return_value # 이 라인 추가
-    mock_supabase_instance._image_cache = mocker.MagicMock() # 경고 해결
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance._image_cache = mocker.MagicMock()
 
     canvas_widget = Canvas()
     item = FurnitureItem(furniture_obj, parent=canvas_widget.canvas_area)
     item.pixmap = dummy_qpixmap.copy()
-    item.original_pixmap = dummy_qpixmap.copy() # original_pixmap 설정
+    item.original_pixmap = dummy_qpixmap.copy()
     item.setFixedSize(dummy_qpixmap.size())
     item.move(10, 10)
     item.show()
@@ -627,35 +608,28 @@ def test_furniture_item_context_menu_adjust_action(MockImageService, MockSupabas
     canvas_widget.select_furniture_item(item)
     qtbot.addWidget(canvas_widget)
 
-    # FurnitureItem.show_adjustment_dialog 메소드를 spy 대신 patch로 변경
     mock_show_dialog = mocker.patch.object(item, 'show_adjustment_dialog', return_value=None)
 
-    # 컨텍스트 메뉴 설정 (adjust_action이 선택되도록)
     mock_menu = mocker.MagicMock(spec=QMenu)
-    mock_delete_action = mocker.MagicMock(text="삭제")
-    mock_flip_action = mocker.MagicMock(text="좌우 반전")
-    mock_adjust_action = mocker.MagicMock(text="이미지 조정") # 실제 action의 text와 동일하게
+    adjust_action = QAction("이미지 조정")
+    adjust_action.triggered.connect(item.show_adjustment_dialog)
 
-    def side_effect_add_action(text):
-        if text == "삭제":
-            return mock_delete_action
-        elif text == "좌우 반전":
-            return mock_flip_action
-        elif text == "이미지 조정":
-            return mock_adjust_action
-        return mocker.MagicMock()
+    def add_action_side_effect(text_or_icon, text_if_icon=None):
+        actual_text = text_or_icon if isinstance(text_or_icon, str) else text_if_icon
+        if actual_text == "이미지 조정":
+            return adjust_action
+        return QAction(actual_text)
 
-    mock_menu.addAction.side_effect = side_effect_add_action
-    mock_menu.exec.return_value = mock_adjust_action # '이미지 조정' 액션이 선택된 것처럼 설정
+    mock_menu.addAction.side_effect = add_action_side_effect
+    mock_menu.exec.return_value = adjust_action
 
     mock_event = mocker.MagicMock(spec=QContextMenuEvent)
     mock_event.globalPos.return_value = QPoint(10, 10)
 
     with patch('src.ui.widgets.furniture_item.QMenu', return_value=mock_menu):
         item.contextMenuEvent(mock_event)
-
-    # show_adjustment_dialog가 호출되었는지 확인
-    mock_show_dialog.assert_called_once() 
+    
+    mock_show_dialog.assert_called_once()
 
 def test_furniture_item_multiple_selection_movement(qtbot, mocker):
     """다중 선택된 아이템들이 함께 이동하는지 테스트합니다."""

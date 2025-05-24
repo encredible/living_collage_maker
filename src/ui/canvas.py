@@ -87,6 +87,61 @@ class Canvas(QWidget):
         
         # 키보드 포커스 설정 (키 이벤트 수신을 위해)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
+        # Undo/Redo 스택 초기화
+        self.undo_stack = []
+        self.redo_stack = []
+        self._save_state_and_update_actions() # 초기 빈 캔버스 상태 저장
+    
+    def _get_current_state(self):
+        """캔버스의 현재 상태를 딕셔너리 형태로 반환합니다."""
+        state = {
+            "canvas_size": (self.canvas_area.width(), self.canvas_area.height()),
+            "furniture_items": [],
+            "background_image_data": None, # 배경 이미지 데이터 추가
+            "has_background": self.has_background
+        }
+        
+        if self.has_background and self.background_image and not self.background_image.isNull():
+            byte_array = QByteArray()
+            buffer = QBuffer(byte_array)
+            buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+            success = self.background_image.save(buffer, "PNG")
+            buffer.close()
+            if success:
+                state["background_image_data"] = base64.b64encode(byte_array.data()).decode('utf-8')
+
+        for i, item_widget in enumerate(self.furniture_items):
+            item_state = {
+                "id": item_widget.furniture.id,
+                "position": (item_widget.pos().x(), item_widget.pos().y()),
+                "size": (item_widget.width(), item_widget.height()),
+                "z_order": i,
+                "is_flipped": getattr(item_widget, 'is_flipped', False),
+                "color_temp": getattr(item_widget, 'color_temp', 6500),
+                "brightness": getattr(item_widget, 'brightness', 100),
+                "saturation": getattr(item_widget, 'saturation', 100)
+            }
+            state["furniture_items"].append(item_state)
+        return state
+
+    def _save_state(self):
+        """현재 캔버스 상태를 Undo 스택에 저장합니다."""
+        current_state = self._get_current_state()
+        
+        # 가장 최근 undo 상태가 현재 상태와 동일하면 저장하지 않음 (중복 방지)
+        # 이 비교는 깊은 비교가 필요할 수 있으며, 간단히 참조 비교나 얕은 비교로는 부족할 수 있음.
+        # 여기서는 일단 Python의 기본 dict 비교를 사용. 더 정확한 비교 로직이 필요할 수 있음.
+        if self.undo_stack and self.undo_stack[-1] == current_state:
+            # print("[Undo/Redo] 현재 상태가 이미 Undo 스택의 최상단과 동일하여 저장 건너뜀.")
+            return
+
+        if len(self.undo_stack) >= 50: # 최대 50개 상태 저장
+            self.undo_stack.pop(0) # 가장 오래된 상태 제거
+        
+        self.undo_stack.append(current_state)
+        self.redo_stack.clear() # 새 액션 발생 시 Redo 스택 비움
+        print(f"[Undo/Redo] 상태 저장됨. Undo 스택 크기: {len(self.undo_stack)}, 최상단 아이템 수: {len(current_state['furniture_items'])}")
     
     def canvas_mouse_press_event(self, event):
         """캔버스 영역에서 마우스 버튼을 눌렀을 때의 처리"""
@@ -376,12 +431,10 @@ class Canvas(QWidget):
                 
                 canvas_width = collage_data["canvas"]["width"]
                 canvas_height = collage_data["canvas"]["height"]
-                # 저장된 콜라주를 불러올 때는 정확한 크기 유지
-                self.canvas_area.setFixedSize(canvas_width, canvas_height)
-                # 불러온 콜라주는 새 콜라주가 아님 (윈도우 리사이즈 시 동적 조정 안 함)
-                self.is_new_collage = False
-                print(f"[콜라주 불러오기] 캔버스 상태: is_new_collage = False")
-                
+                # 저장된 콜라주도 동적으로 크기 조절 가능하도록 resize 사용
+                self.canvas_area.resize(canvas_width, canvas_height)
+                self.adjust_window_size_to_canvas(canvas_width, canvas_height) # 윈도우 크기 조정 메서드 호출
+
                 # 배경 이미지 복원
                 canvas_info = collage_data["canvas"]
                 if canvas_info.get("has_background", False) and canvas_info.get("background_image_data"):
@@ -483,30 +536,6 @@ class Canvas(QWidget):
                 # 하단 패널 업데이트
                 self.update_bottom_panel()
                 
-                # 윈도우 크기 조정 (수정된 부분)
-                window = self.window()
-                if window:
-                    # 현재 윈도우 크기 가져오기
-                    current_width = window.width()
-                    current_height = window.height()
-                    
-                    # 기본 여백 설정
-                    right_panel_width = 400  # 우측 패널 너비
-                    top_margin = 100  # 상단 여유 공간
-                    
-                    # 캔버스 기반 최소 크기 계산
-                    canvas_based_width = canvas_width + right_panel_width
-                    canvas_based_height = canvas_height + top_margin
-                    
-                    # 최소 윈도우 크기 계산 (현재 크기와 캔버스 기반 크기 중 더 큰 값 사용)
-                    # 단, 기본 최소 크기(1200, 800)보다는 작아지지 않도록 설정
-                    new_width = max(1200, current_width, canvas_based_width)
-                    new_height = max(800, current_height, canvas_based_height)
-                    
-                    # 윈도우 크기 조정
-                    window.setMinimumSize(new_width, new_height)
-                    window.resize(new_width, new_height)
-                
                 self._show_information_message("성공", "콜라주가 성공적으로 불러와졌습니다.")
                 
             except Exception as e:
@@ -577,10 +606,13 @@ class Canvas(QWidget):
             self.canvas_area.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.canvas_area.customContextMenuRequested.connect(self.show_context_menu)
             self.canvas_area.mousePressEvent = self.canvas_mouse_press_event
+            self.canvas_area.mouseMoveEvent = self.canvas_mouse_move_event
+            self.canvas_area.mouseReleaseEvent = self.canvas_mouse_release_event
             
-            # 5. 상태 초기화 - 먼저 동적 리사이즈 중단
-            self.is_new_collage = False  # 윈도우 크기 조정 전에 False로 설정
-            
+            # 5. 상태 초기화 - is_new_collage는 크기 조절에 영향을 주지 않도록 함
+            # self.is_new_collage = False  # 이 부분을 True로 변경하거나, resizeEvent에서 처리하도록 함
+            self.is_new_collage = True # 새 콜라주는 일단 True로 유지 (다른 의미로 사용될 수 있음)
+
             # 6. UI 강제 업데이트
             self.canvas_area.show()
             self.update()
@@ -604,7 +636,8 @@ class Canvas(QWidget):
             QTimer.singleShot(100, lambda: self.verify_and_fix_canvas_size(width, height))
             
             print(f"[새 콜라주] 캔버스 완전 초기화 완료: {width}x{height}")
-            print(f"[새 콜라주] 동적 리사이즈 비활성화됨 - is_new_collage: False")
+            print(f"[새 콜라주] 동적 리사이즈 비활성화됨 - is_new_collage: {self.is_new_collage}")
+            self._save_state_and_update_actions() # 상태 저장
     
     def verify_and_fix_canvas_size(self, expected_width, expected_height):
         """윈도우 크기 조정 후 캔버스 크기가 의도한 크기와 일치하는지 확인하고 보정합니다."""
@@ -784,27 +817,18 @@ class Canvas(QWidget):
         """드롭 이벤트를 처리합니다."""
         try:
             if event.mimeData().hasFormat("application/x-furniture"):
-                # 드롭 위치 계산 (캔버스 영역 기준)
                 drop_pos = self.canvas_area.mapFrom(self, event.position().toPoint())
-                
-                # MIME 데이터에서 가구 정보 추출
                 furniture_data = eval(event.mimeData().data("application/x-furniture").data().decode())
-                
-                # Furniture 객체 생성
                 furniture = Furniture(**furniture_data)
-                
-                # 가구 아이템 생성 및 추가
                 item = FurnitureItem(furniture, self.canvas_area)
-                item.move(drop_pos - QPoint(item.width() // 2, item.height() // 2))  # 드롭 위치 기준으로 중앙에 배치
+                # FurnitureItem의 item_changed 시그널을 Canvas의 상태 저장 메서드에 연결
+                item.item_changed.connect(self._save_state_and_update_actions)
+                
+                item.move(drop_pos - QPoint(item.width() // 2, item.height() // 2))
                 item.show()
                 self.furniture_items.append(item)
-                
-                # 새로 추가된 아이템을 선택 상태로 설정
                 self.select_furniture_item(item)
-                
-                # 하단 패널 업데이트
-                # self.update_bottom_panel() # select_furniture_item 내부에서 호출되므로 중복 제거
-                
+                self._save_state_and_update_actions() # 여기서 한 번 저장 (아이템 추가 작업 자체)
                 event.acceptProposedAction()
         except Exception as e:
             print(f"드롭 이벤트 처리 중 오류 발생: {e}")
@@ -880,68 +904,64 @@ class Canvas(QWidget):
     def keyPressEvent(self, event):
         """키보드 입력 처리 (아이템 이동, 삭제 등)"""
         if not self.selected_items:
-            super().keyPressEvent(event) # 선택된 아이템이 없으면 기본 처리
+            super().keyPressEvent(event)
             return
 
+        action_taken = False
         delta_x = 0
         delta_y = 0
         
-        # Ctrl 키 상태에 따라 이동 간격 조절
         modifiers = QGuiApplication.keyboardModifiers()
-        if modifiers & Qt.KeyboardModifier.ControlModifier:
-            move_step = 1  # Ctrl 키 누르면 1px 이동
-        else:
-            move_step = 5  # 기본 5px 이동
+        move_step = 1 if modifiers & Qt.KeyboardModifier.ControlModifier else 5
 
         if event.key() == Qt.Key.Key_Left:
             delta_x = -move_step
+            action_taken = True
         elif event.key() == Qt.Key.Key_Right:
             delta_x = move_step
+            action_taken = True
         elif event.key() == Qt.Key.Key_Up:
             delta_y = -move_step
+            action_taken = True
         elif event.key() == Qt.Key.Key_Down:
             delta_y = move_step
+            action_taken = True
         elif event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
-            # 다중 선택된 아이템 삭제
-            items_to_delete = list(self.selected_items) # 복사본으로 작업
-            for item in items_to_delete:
-                if item in self.furniture_items:
-                    self.furniture_items.remove(item)
-                item.deleteLater() # 위젯 삭제
-            self.selected_items.clear() # 선택 목록 비우기
-            self.update_bottom_panel()
-            self.canvas_area.update() # 캔버스 영역 업데이트
+            items_to_delete = list(self.selected_items)
+            if items_to_delete:
+                for item_to_del in items_to_delete:
+                    if item_to_del in self.furniture_items:
+                        self.furniture_items.remove(item_to_del)
+                    item_to_del.deleteLater()
+                self.selected_items.clear()
+                self.update_bottom_panel()
+                self.canvas_area.update()
+                action_taken = True
             event.accept()
-            return
+            if action_taken:
+                self._save_state_and_update_actions() # 상태 저장
+            return 
         else:
-            super().keyPressEvent(event) # 다른 키는 기본 처리
+            super().keyPressEvent(event)
             return
 
         if delta_x != 0 or delta_y != 0:
-            for item in self.selected_items:
-                new_pos = item.pos() + QPoint(delta_x, delta_y)
-                
-                # 캔버스 경계 체크 (선택 사항, 필요에 따라 추가/수정)
-                # new_x = max(0, min(new_pos.x(), self.canvas_area.width() - item.width()))
-                # new_y = max(0, min(new_pos.y(), self.canvas_area.height() - item.height()))
-                # item.move(new_x, new_y)
-                
-                item.move(new_pos) # 경계 체크 없이 이동
-                item.update() 
-            
-            self.update_bottom_panel() # 하단 패널 정보 업데이트
-            self.canvas_area.update() # 캔버스 영역 업데이트 (전체 아이템 이동 후 한 번만 호출 가능)
+            for item_mv in self.selected_items:
+                new_pos = item_mv.pos() + QPoint(delta_x, delta_y)
+                item_mv.move(new_pos)
+                item_mv.update()
+            self.update_bottom_panel()
+            self.canvas_area.update()
             event.accept()
-        else:
-            super().keyPressEvent(event)
+        
+        if action_taken:
+            self._save_state_and_update_actions() # 상태 저장
     
     def resize_canvas(self):
         """캔버스 크기를 조절합니다."""
-        # 현재 캔버스 크기를 초기값으로 사용
         current_width = self.canvas_area.width()
         current_height = self.canvas_area.height()
         
-        # 캔버스 크기 다이얼로그 표시
         dialog = CanvasSizeDialog(
             initial_width=current_width,
             initial_height=current_height,
@@ -951,21 +971,16 @@ class Canvas(QWidget):
         
         if dialog.exec():
             new_width, new_height = dialog.get_canvas_size()
-            
-            # 캔버스 크기 변경 (setFixedSize 대신 resize 사용)
+            # self.canvas_area.setFixedSize(new_width, new_height) # -> resize로 변경
             self.canvas_area.resize(new_width, new_height)
-            # 최소 크기는 기본값 유지 (리사이즈 가능하도록)
+            # self.is_new_collage = False # 명시적 크기 조절 후에는 동적 리사이즈 중단 -> 이 로직 제거
             self.canvas_area.setMinimumSize(self.CANVAS_MIN_WIDTH, self.CANVAS_MIN_HEIGHT)
-            
-            # 캔버스 밖으로 벗어난 가구들 처리
             self.handle_furniture_out_of_bounds()
             
-            # 부모 윈도우에 크기 변경 알림
             parent_window = self.window()
             if hasattr(parent_window, 'canvas_size_changed'):
                 parent_window.canvas_size_changed()
             
-            # 윈도우 크기를 캔버스 크기에 맞춰 조정할지 물어보기
             reply = QMessageBox.question(
                 self,
                 "윈도우 크기 조정",
@@ -981,6 +996,7 @@ class Canvas(QWidget):
                 "알림", 
                 f"캔버스 크기가 {new_width}x{new_height}로 변경되었습니다."
             )
+            self._save_state_and_update_actions() # 상태 저장
     
     def handle_furniture_out_of_bounds(self):
         """캔버스 영역을 벗어난 가구들을 캔버스 내로 이동시킵니다."""
@@ -1031,9 +1047,10 @@ class Canvas(QWidget):
         """Canvas 크기 변경 시 호출됩니다."""
         super().resizeEvent(event)
         
-        # 새 콜라주 상태일 때만 윈도우 크기에 맞춰 동적 조정
+        # 새 콜라주 상태일 때만 윈도우 크기에 맞춰 동적 조정 -> is_new_collage 조건 제거
         # 불러온 콜라주나 복원된 콜라주는 동적 조정하지 않음
-        if self.is_new_collage and hasattr(self, 'canvas_area') and self.canvas_area:
+        # if self.is_new_collage and hasattr(self, 'canvas_area') and self.canvas_area:
+        if hasattr(self, 'canvas_area') and self.canvas_area: # is_new_collage 조건 제거
             # 캔버스 영역을 Canvas 크기에 맞춰 조정 (여백 고려)
             margin = 20  # 여백
             new_width = max(self.CANVAS_MIN_WIDTH, event.size().width() - margin)
@@ -1043,9 +1060,9 @@ class Canvas(QWidget):
             if (self.canvas_area.width() != new_width or 
                 self.canvas_area.height() != new_height):
                 self.canvas_area.resize(new_width, new_height)
-                print(f"[Canvas 리사이즈] 새 콜라주 동적 조정: {new_width}x{new_height}")
-        else:
-            print(f"[Canvas 리사이즈] 정적 크기 유지 - is_new_collage: {self.is_new_collage}")
+                print(f"[Canvas 리사이즈] 동적 조정: {new_width}x{new_height}")
+        # else:
+            # print(f"[Canvas 리사이즈] 정적 크기 유지 또는 canvas_area 없음 - is_new_collage: {self.is_new_collage}")
     
     def set_canvas_background_and_resize(self, background_image: QPixmap, width: int, height: int):
         """배경 이미지를 설정하고 캔버스 크기를 조정합니다."""
@@ -1055,10 +1072,7 @@ class Canvas(QWidget):
             
             # 캔버스 크기를 배경 이미지 크기에 맞춰 조정
             self.canvas_area.resize(width, height)
-            self.canvas_area.setMinimumSize(width, height)
-            
-            # 새 콜라주 상태가 아니도록 설정 (크기 고정)
-            self.is_new_collage = False
+            self.canvas_area.setMinimumSize(width, height) # 배경 크기가 최소 크기가 됨
             
             # 캔버스 영역 다시 그리기
             self.canvas_area.update()
@@ -1072,19 +1086,166 @@ class Canvas(QWidget):
             self.adjust_window_size_to_canvas(width, height)
             
             print(f"[Canvas] 배경 이미지 설정 완료: {width}x{height}")
+            self._save_state_and_update_actions() # 상태 저장
         else:
             print("[Canvas] 배경 이미지 설정 실패: 유효하지 않은 이미지")
     
     def remove_canvas_background(self):
         """캔버스 배경 이미지를 제거합니다."""
-        self.background_image = None
-        self.has_background = False
-        
-        # 캔버스 영역 다시 그리기 (흰색 배경으로)
-        self.canvas_area.update()
-        
-        print("[Canvas] 배경 이미지가 제거되었습니다.")
+        if self.has_background:
+            self.background_image = None
+            self.has_background = False
+            self.canvas_area.update()
+            print("[Canvas] 배경 이미지가 제거되었습니다.")
+            self._save_state_and_update_actions() # 상태 저장
+        else:
+            print("[Canvas] 제거할 배경 이미지가 없습니다.")
     
     def get_background_image(self) -> QPixmap:
         """현재 배경 이미지를 반환합니다."""
         return self.background_image if self.has_background else None
+
+    def _save_state_and_update_actions(self):
+        """상태를 저장하고 MainWindow의 Undo/Redo 액션 상태를 업데이트합니다."""
+        self._save_state()
+        # MainWindow에 undo/redo 가능 상태 업데이트 알림
+        main_window = self.window()
+        if hasattr(main_window, 'update_undo_redo_actions'):
+            main_window.update_undo_redo_actions()
+
+    def _restore_state(self, state):
+        """주어진 상태로 캔버스를 복원합니다."""
+        if not state:
+            return
+
+        # ... (기존 아이템 제거, 캔버스 크기 복원, 배경 복원 로직) ...
+        # 기존 아이템 제거
+        for item_to_remove in self.furniture_items:
+            # 시그널 연결 해제 시도 (오류 방지)
+            try:
+                item_to_remove.item_changed.disconnect(self._save_state_and_update_actions)
+            except TypeError:
+                pass # 연결되지 않았을 경우
+            item_to_remove.deleteLater()
+        self.furniture_items.clear()
+        self.selected_items.clear()
+
+        # 캔버스 크기 복원
+        canvas_w, canvas_h = state["canvas_size"]
+        self.canvas_area.resize(canvas_w, canvas_h)
+
+        # 배경 이미지 복원
+        self.has_background = state.get("has_background", False)
+        background_image_data = state.get("background_image_data")
+        if self.has_background and background_image_data:
+            try:
+                image_data_bytes = base64.b64decode(background_image_data)
+                pixmap = QPixmap()
+                if pixmap.loadFromData(image_data_bytes):
+                    self.background_image = pixmap
+                else:
+                    self.background_image = None
+                    self.has_background = False
+                    print("[Undo/Redo] 배경 이미지 데이터 로드 실패")
+            except Exception as e:
+                print(f"[Undo/Redo] 배경 이미지 복원 중 오류: {e}")
+                self.background_image = None
+                self.has_background = False
+        else:
+            self.background_image = None
+            self.has_background = False
+
+        supabase_client = SupabaseClient()
+        all_furniture_db_data = {f_data['id']: f_data for f_data in supabase_client.get_furniture_list()}
+
+        for item_state in sorted(state["furniture_items"], key=lambda x: x["z_order"]):
+            furniture_id = item_state["id"]
+            if furniture_id in all_furniture_db_data:
+                furniture_db_data = all_furniture_db_data[furniture_id]
+                furniture = Furniture(**furniture_db_data)
+                item = FurnitureItem(furniture, self.canvas_area)
+                
+                # FurnitureItem의 item_changed 시그널을 Canvas의 상태 저장 메서드에 연결
+                item.item_changed.connect(self._save_state_and_update_actions)
+                
+                item.move(QPoint(*item_state["position"]))
+                item.setFixedSize(QSize(*item_state["size"]))
+                item.is_flipped = item_state.get("is_flipped", False)
+                if item.is_flipped:
+                    transform = QTransform().scale(-1, 1)
+                    if item.original_pixmap and not item.original_pixmap.isNull():
+                        item.pixmap = item.original_pixmap.transformed(transform)
+                    else:
+                        item.pixmap = item.pixmap.transformed(transform)
+                item.color_temp = item_state.get("color_temp", 6500)
+                item.brightness = item_state.get("brightness", 100)
+                item.saturation = item_state.get("saturation", 100)
+                if (item.color_temp != 6500 or item.brightness != 100 or item.saturation != 100):
+                    if item.original_pixmap is None or item.original_pixmap.isNull():
+                        item.original_pixmap = item.pixmap.copy()
+                    item.preview_pixmap = item.original_pixmap.copy()
+                    item.apply_image_effects(item.color_temp, item.brightness, item.saturation)
+                item.show()
+                self.furniture_items.append(item)
+            else:
+                print(f"[Undo/Redo] 복원 중 가구 ID({furniture_id})를 찾을 수 없음")
+
+        self.update_bottom_panel()
+        self.canvas_area.update()
+        main_window = self.window()
+        if hasattr(main_window, 'update_undo_redo_actions'):
+            main_window.update_undo_redo_actions()
+        print(f"[Undo/Redo] 상태 복원됨.")
+
+    def undo(self):
+        """이전 상태로 되돌립니다."""
+        if len(self.undo_stack) < 2: # 현재 UI 상태와 최소 한 개의 이전 상태가 있어야 undo 가능
+            print("[Undo/Redo] Undo 스택에 이전 상태가 충분하지 않음 (스택 크기 < 2)")
+            return
+
+        current_ui_state = self.undo_stack.pop() # (1) 스택에서 현재 UI 상태를 꺼냄
+        self.redo_stack.append(current_ui_state)  # (2) 현재 UI 상태를 redo 스택에 넣음
+        
+        # 이제 undo_stack의 최상단이 복원할 이전 상태가 됨
+        state_to_restore = self.undo_stack[-1] # (3) 복원할 이전 상태를 가져옴 (pop하지 않음)
+        self._restore_state(state_to_restore)    # (4) 이전 상태로 복원
+        
+        # _restore_state 호출 후 여기서 한 번 더 명시적으로 호출하여 일관성 보장
+        main_window = self.window()
+        if hasattr(main_window, 'update_undo_redo_actions'):
+            main_window.update_undo_redo_actions()
+        print(f"[Undo/Redo] Undo 실행. 복원된 상태 peek: {len(self.undo_stack[-1]['furniture_items']) if self.undo_stack else 'N/A'} items. Redo 스택 크기: {len(self.redo_stack)}")
+
+    def redo(self):
+        """되돌린 상태를 다시 실행합니다."""
+        if not self.redo_stack:
+            print("[Undo/Redo] Redo 스택 비어있음")
+            return
+            
+        state_to_restore = self.redo_stack.pop() # (1) redo 스택에서 복원할 상태를 꺼냄
+        self.undo_stack.append(state_to_restore)  # (2) 복원할 상태를 undo 스택에 다시 넣음 (가장 마지막 상태가 됨)
+        
+        self._restore_state(state_to_restore)    # (3) 해당 상태로 복원
+        
+        # _restore_state 호출 후 여기서 한 번 더 명시적으로 호출하여 일관성 보장
+        main_window = self.window()
+        if hasattr(main_window, 'update_undo_redo_actions'):
+            main_window.update_undo_redo_actions()
+        print(f"[Undo/Redo] Redo 실행. 복원된 상태: {len(state_to_restore['furniture_items'])} items. Undo 스택 크기: {len(self.undo_stack)}")
+
+    def remove_furniture_item(self, item_to_remove):
+        """지정된 가구 아이템을 캔버스에서 제거합니다."""
+        if item_to_remove in self.furniture_items:
+            self.furniture_items.remove(item_to_remove)
+            item_to_remove.deleteLater()
+            # 선택된 아이템이 제거된 아이템이라면 선택 해제
+            if self.selected_item is item_to_remove:
+                self.selected_item = None
+            if item_to_remove in self.selected_items:
+                self.selected_items.remove(item_to_remove)
+            
+            self._save_state_and_update_actions() # 상태 저장
+            self.canvas_area.update() # 캔버스 영역 갱신
+            print(f"아이템 제거됨: {item_to_remove.furniture.name}, 남은 아이템: {len(self.furniture_items)}")
+        else:
+            print(f"제거할 아이템을 찾을 수 없음: {item_to_remove}")

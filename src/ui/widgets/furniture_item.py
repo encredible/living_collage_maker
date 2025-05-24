@@ -1,6 +1,6 @@
 from typing import Union
 
-from PyQt6.QtCore import QRect, Qt, QTimer, QThread
+from PyQt6.QtCore import QRect, Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import (QColor, QGuiApplication, QPainter, QPen, QPixmap,
                          QTransform)
 from PyQt6.QtWidgets import (QDialog, QGroupBox, QHBoxLayout, QLabel, QMenu,
@@ -13,6 +13,8 @@ from src.ui.utils import ImageAdjuster, ImageProcessor
 
 
 class FurnitureItem(QWidget):
+    item_changed = pyqtSignal()
+
     def __init__(self, furniture: Furniture, parent=None):
         super().__init__(parent)
         self.furniture = furniture
@@ -386,61 +388,75 @@ class FurnitureItem(QWidget):
             item.move(item.pos() + valid_delta)
     
     def mouseReleaseEvent(self, event):
-        self.is_resizing = False
-    
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.is_resizing = False
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            if self.old_pos is not None and self.old_pos != self.pos(): # 위치가 변경된 경우
+                print(f"{self.furniture.name} moved to {self.pos()}")
+                self.item_changed.emit() # 위치 변경 완료 시 시그널 발생
+            self.old_pos = None # 드래그 완료 후 초기화
+        super().mouseReleaseEvent(event)
+
     def contextMenuEvent(self, event):
+        """컨텍스트 메뉴를 표시합니다."""
         menu = QMenu(self)
+        
+        # 메뉴 아이템 추가
         delete_action = menu.addAction("삭제")
         flip_action = menu.addAction("좌우 반전")
-        menu.addSeparator()
-        adjust_action = menu.addAction("이미지 조정")  # 이미지 조정 메뉴 추가
+        adjust_action = menu.addAction("이미지 조정")
+        # --- Z-order actions ---
+        bring_to_front_action = menu.addAction("맨 앞으로 가져오기")
+        send_to_back_action = menu.addAction("맨 뒤로 보내기")
+        bring_forward_action = menu.addAction("앞으로 가져오기")
+        send_backward_action = menu.addAction("뒤로 보내기")
+        # ---
+
         action = menu.exec(event.globalPos())
-        
+
+        canvas_widget = self.parent().parent() # self.parent()는 CanvasArea, self.parent().parent()는 Canvas
+
         if action == delete_action:
-            print(f"[삭제] 가구 아이템 삭제 시작: {self.furniture.name}")
-            # 부모 캔버스 영역에서 캔버스 찾기
-            canvas_area = self.parent()
-            if canvas_area:
-                canvas = canvas_area.parent()
-                if canvas and hasattr(canvas, 'selected_items') and hasattr(canvas, 'furniture_items'):
-                    # 다중 선택된 모든 아이템 삭제
-                    items_to_delete = canvas.selected_items.copy()  # 리스트 복사
-                    if items_to_delete:
-                        print(f"[삭제] 다중 선택된 {len(items_to_delete)}개 아이템 삭제")
-                        for item in items_to_delete:
-                            if item in canvas.furniture_items:
-                                print(f"[삭제] 캔버스에서 가구 아이템 제거: {item.furniture.name}")
-                                canvas.furniture_items.remove(item)
-                            item.deleteLater()
-                        # 선택 목록 초기화
-                        canvas.selected_items.clear()
-                        # 하단 패널 업데이트
-                        canvas.update_bottom_panel()
-                        print(f"[삭제] 다중 선택 아이템 삭제 완료")
-                    else:
-                        # 선택된 아이템이 없는 경우 현재 아이템만 삭제
-                        if self in canvas.furniture_items:
-                            print(f"[삭제] 캔버스에서 가구 아이템 제거: {self.furniture.name}")
-                            canvas.furniture_items.remove(self)
-                            canvas.update_bottom_panel()
-                        self.deleteLater()
-                        print(f"[삭제] 단일 아이템 삭제 완료: {self.furniture.name}")
-                else:
-                    print("[삭제] 캔버스를 찾을 수 없거나 필요한 속성이 없음")
-                    self.deleteLater()
+            if canvas_widget and hasattr(canvas_widget, 'remove_furniture_item'):
+                canvas_widget.remove_furniture_item(self)
             else:
-                print("[삭제] 캔버스 영역을 찾을 수 없음")
-                self.deleteLater()
+                self.deleteLater() # Canvas를 찾지 못하면 자체적으로 삭제 시도
         elif action == flip_action:
-            # 이미지 좌우 반전
-            transform = QTransform()
-            transform.scale(-1, 1)  # x축 방향으로 -1을 곱하여 좌우 반전
-            self.pixmap = self.pixmap.transformed(transform)
-            self.is_flipped = not self.is_flipped  # 반전 상태 토글
-            self.update()  # 위젯 다시 그리기
+            self.flip_item_and_emit_signal()
         elif action == adjust_action:
-            # 이미지 조정 다이얼로그 표시
             self.show_adjustment_dialog()
+        elif action == bring_to_front_action:
+            # Implement bring to front logic
+            pass
+        elif action == send_to_back_action:
+            # Implement send to back logic
+            pass
+        elif action == bring_forward_action:
+            # Implement bring forward logic
+            pass
+        elif action == send_backward_action:
+            # Implement send backward logic
+            pass
+
+    def flip_item_and_emit_signal(self):
+        """아이템을 좌우 반전시키고 item_changed 시그널을 발생시킵니다."""
+        if self.pixmap is None or self.pixmap.isNull():
+            return
+
+        transform = QTransform()
+        transform.scale(-1, 1)  # x축 방향으로 -1을 곱하여 좌우 반전
+        self.pixmap = self.pixmap.transformed(transform)
+        self.is_flipped = not self.is_flipped # 반전 상태 업데이트
+        
+        # 원본 이미지도 반전 (만약 원본 기반으로 효과를 재적용한다면 필요)
+        # 주의: original_pixmap을 직접 수정하면 다음 반전 시 문제가 될 수 있으므로,
+        # is_flipped 상태에 따라 원본 또는 반전된 원본을 사용하도록 하는 것이 더 나을 수 있음.
+        # 여기서는 간단히 현재 pixmap을 기준으로 하고, is_flipped 상태로 구분.
+        # if self.original_pixmap and not self.original_pixmap.isNull():
+        #     self.original_pixmap = self.original_pixmap.transformed(transform)
+            
+        self.update() # 위젯 다시 그리기
+        self.item_changed.emit() # 변경 시그널 발생
 
     def show_adjustment_dialog(self):
         """이미지 조정 다이얼로그를 표시합니다."""
@@ -847,49 +863,30 @@ class FurnitureItem(QWidget):
                 self.adjust_dialog.accept()
     
     def finalize_adjustments(self, final_pixmap):
-        """이미지 조정 결과를 최종 적용하고 다이얼로그를 닫습니다."""
-        try:
-            # 결과 깊은 복사 생성
-            final_result = final_pixmap.copy()
-            
-            # 좌우 반전 유지 (고품질 변환 사용)
-            if self.is_flipped:
-                transform = QTransform()
-                transform.scale(-1, 1)
-                final_result = final_result.transformed(transform, Qt.TransformationMode.SmoothTransformation)
-                final_result = final_result.copy()  # 변환 후에도 깊은 복사
-            
-            # 최종 결과 적용 - 원본 크기로 복원 (필요한 경우)
-            if final_result.size() != self.original_pixmap.size():
-                final_result = final_result.scaled(
-                    self.original_pixmap.size(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation
-                )
-                final_result = final_result.copy()  # 스케일링 후에도 깊은 복사
-            
-            self.pixmap = final_result
-            self.update()
-            
-            # 처리 플래그 해제
-            self.is_processing = False
-            
-            # 다이얼로그 닫기
-            if hasattr(self, 'adjust_dialog') and self.adjust_dialog:
-                self.adjust_dialog.accept()
-                
-            # 파라미터 출력
-            print(f"이미지 효과 적용 완료: 색온도={self.color_temp}K, 밝기={self.brightness}%, 채도={self.saturation}%")
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"[이미지 조정] 최종화 중 오류 발생: {e}")
-            self.is_processing = False
-            
-            # 다이얼로그 닫기
-            if hasattr(self, 'adjust_dialog') and self.adjust_dialog:
-                self.adjust_dialog.accept()
-    
+        """이미지 조정 최종 적용 및 다이얼로그 닫기 (스레드 결과 처리)"""
+        if final_pixmap and not final_pixmap.isNull():
+            self.pixmap = final_pixmap
+            # self.original_pixmap은 최초 로드된 원본을 유지하거나,
+            # 조정이 완료된 이미지를 새 원본으로 삼을지 정책 결정 필요.
+            # 여기서는 현재 pixmap을 기준으로 효과가 누적된다고 가정.
+            self.update() # 최종 이미지로 위젯 업데이트
+            print(f"{self.furniture.name} 이미지 조정 최종 적용 완료")
+            self.item_changed.emit() # 이미지 조정 완료 시 시그널 발생
+        else:
+            print(f"{self.furniture.name} 이미지 조정 결과가 유효하지 않아 적용되지 않음")
+
+        # 이미지 조정 다이얼로그 닫기 및 참조 해제
+        if self.adjust_dialog:
+            self.adjust_dialog.accept() # 다이얼로그 닫기
+            # self.adjust_dialog.deleteLater() # C++ 메모리 관리 방식과 다름
+            self.adjust_dialog = None
+        
+        # 스레드 참조 해제
+        if hasattr(self, 'final_processor_thread') and self.final_processor_thread:
+            self.final_processor_thread = None
+        if hasattr(self, 'preview_processor_thread') and self.preview_processor_thread:
+            self.preview_processor_thread = None
+
     def cancel_image_adjustments(self):
         """이미지 조정을 취소하고 원래 이미지로 복원합니다."""
         try:

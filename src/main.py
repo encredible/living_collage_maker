@@ -2,21 +2,21 @@ import sys
 import time
 
 from PyQt6.QtCore import QPoint, Qt, QTimer
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (QApplication, QHBoxLayout, QMainWindow, QSplitter,
                              QWidget, QMessageBox, QFileDialog)
 
+from src.models.furniture import Furniture
+from src.services.app_state_service import (AppStateService, AppState, WindowState,
+                                            ColumnWidthState, CanvasState, PanelState,
+                                            FurnitureItemState)
+from src.services.background_service import BackgroundService
+from src.services.html_export_service import HtmlExportService
+from src.services.pdf_export_service import PdfExportService
+from src.services.supabase_client import SupabaseClient
 from src.ui.canvas import Canvas
 from src.ui.panels.bottom_panel import BottomPanel
 from src.ui.panels.explorer_panel import ExplorerPanel
-from src.services.html_export_service import HtmlExportService
-from src.services.pdf_export_service import PdfExportService
-from src.services.background_service import BackgroundService
-from src.services.app_state_service import (AppStateService, AppState, WindowState, 
-                                           ColumnWidthState, CanvasState, PanelState, 
-                                           FurnitureItemState)
-from src.services.supabase_client import SupabaseClient
-from src.models.furniture import Furniture
 from src.ui.widgets import FurnitureItem
 
 
@@ -198,14 +198,48 @@ class MainWindow(QMainWindow):
         # 캔버스 메뉴 추가
         canvas_menu = menubar.addMenu('캔버스')
         
-        set_background_action = QAction('배경 설정', self)
+        # 배경 이미지 설정 액션
+        set_background_action = QAction('배경 이미지 설정', self)
         set_background_action.triggered.connect(self.set_canvas_background)
         canvas_menu.addAction(set_background_action)
         
-        remove_background_action = QAction('배경 제거', self)
+        # 배경 이미지 제거 액션
+        remove_background_action = QAction('배경 이미지 제거', self)
         remove_background_action.triggered.connect(self.remove_canvas_background)
         canvas_menu.addAction(remove_background_action)
+        
+        # 캔버스 크기 조절 액션
+        resize_canvas_action = QAction('캔버스 크기 조절', self)
+        resize_canvas_action.triggered.connect(self.canvas.resize_canvas)
+        canvas_menu.addAction(resize_canvas_action)
+
+        # 편집 메뉴 추가
+        edit_menu = menubar.addMenu('편집')
+        self.undo_action = QAction('실행 취소', self)
+        # self.undo_action.setShortcut(QKeySequence("Ctrl+Z"))
+        self.undo_action.setShortcut(QKeySequence(QKeySequence.StandardKey.Undo)) # 플랫폼 표준 Undo
+        self.undo_action.setEnabled(False) # 초기 비활성화
+        self.undo_action.triggered.connect(self.canvas.undo) # Canvas의 undo 메서드 연결
+        edit_menu.addAction(self.undo_action)
+
+        self.redo_action = QAction('다시 실행', self)
+        # Ctrl+Y 또는 Ctrl+Shift+Z (macOS에서는 Cmd+Shift+Z가 일반적)
+        # if sys.platform == 'darwin':
+        #     self.redo_action.setShortcut(Qt.Key.Key_Z | Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+        # else:
+        #     self.redo_action.setShortcut(QKeySequence("Ctrl+Y"))
+        self.redo_action.setShortcut(QKeySequence(QKeySequence.StandardKey.Redo)) # 플랫폼 표준 Redo
+        self.redo_action.setEnabled(False) # 초기 비활성화
+        self.redo_action.triggered.connect(self.canvas.redo) # Canvas의 redo 메서드 연결
+        edit_menu.addAction(self.redo_action)
     
+    def update_undo_redo_actions(self):
+        """Canvas의 Undo/Redo 스택 상태에 따라 액션 활성화 여부를 업데이트합니다."""
+        if hasattr(self, 'canvas') and self.canvas:
+            self.undo_action.setEnabled(len(self.canvas.undo_stack) > 0)
+            self.redo_action.setEnabled(len(self.canvas.redo_stack) > 0)
+            print(f"[MainWindow] Undo enabled: {self.undo_action.isEnabled()}, Redo enabled: {self.redo_action.isEnabled()}")
+
     def export_html_collage(self):
         """콜라주를 HTML 형식으로 내보냅니다."""
         self.html_export_service.export_collage_to_html(

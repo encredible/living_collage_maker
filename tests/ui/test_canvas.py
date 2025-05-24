@@ -2,7 +2,7 @@ import json
 from unittest.mock import patch, MagicMock, mock_open
 
 import pytest
-from PyQt6.QtCore import QMimeData, QPoint, Qt, QPointF, QEvent, QSize
+from PyQt6.QtCore import QMimeData, QPoint, Qt, QPointF, QEvent, QSize, QRect
 from PyQt6.QtGui import QDropEvent, QDragEnterEvent, QDragMoveEvent, QPixmap, QMouseEvent, QAction
 
 from src.models.furniture import Furniture
@@ -154,7 +154,8 @@ def test_canvas_create_new_collage(MockCanvasSizeDialog, canvas_widget, qtbot, m
     """'새 콜라주 만들기' 기능을 테스트합니다."""
     mock_furniture = MagicMock(spec=Furniture)
     mock_furniture.id = "test-item-for-new"
-    mock_furniture.image_filename = "some_image.png" 
+    mock_furniture.image_filename = "some_image.png"
+    mock_furniture.name = "Test New Furniture"
     
     mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
     dummy_pixmap = QPixmap(100,100)
@@ -185,7 +186,7 @@ def test_canvas_create_new_collage(MockCanvasSizeDialog, canvas_widget, qtbot, m
     assert canvas_widget.canvas_area.height() == 600
     assert not canvas_widget.furniture_items
     assert canvas_widget.selected_item is None
-    assert canvas_widget.is_new_collage is False
+    assert canvas_widget.is_new_collage is True
     mock_update_bottom_panel.assert_called_once()
 
 @patch('src.services.supabase_client.SupabaseClient')
@@ -1197,6 +1198,85 @@ def test_canvas_rectangle_selection_basic(MockImageService, MockSupabaseClient, 
 
 @patch('src.services.supabase_client.SupabaseClient')
 @patch('src.services.image_service.ImageService')
+def test_canvas_rectangle_selection_too_small(MockImageService, MockSupabaseClient, canvas_widget, qtbot, mocker):
+    """너무 작은 영역 선택은 무시되는지 테스트합니다."""
+    # Canvas와 canvas_area 제대로 설정
+    canvas_widget.canvas_area.setFixedSize(600, 600)  # 더 큰 캔버스로 설정
+    canvas_widget.show()
+    canvas_widget.canvas_area.show()
+    qtbot.waitExposed(canvas_widget)
+    
+    mock_furniture = MagicMock(spec=Furniture)
+    mock_furniture.id = "small_rect"
+    mock_furniture.image_filename = "small_rect.png"
+
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.green)
+    mock_load_image.return_value = dummy_pixmap
+    
+    item = FurnitureItem(mock_furniture, parent=canvas_widget.canvas_area)
+    item.pixmap = dummy_pixmap  # pixmap 직접 설정
+    # FurnitureItem은 기본적으로 200x200 크기이므로, 위치만 설정
+    item.move(10, 10)  # 위치를 (10, 10)으로 설정 (실제 영역: 10, 10, 200, 200)
+    item.show()
+    canvas_widget.furniture_items.append(item)
+    
+    # 실제 아이템 크기 확인
+    actual_item_rect = item.geometry()
+    print(f"Actual item geometry: {actual_item_rect}")
+    
+    # 아이템 영역에서 완전히 떨어진 곳에서 너무 작은 영역 선택 시뮬레이션 (3x3 픽셀)
+    # 아이템이 (10, 10, 200, 200) 영역을 차지하므로, (400, 400) 위치에서 테스트
+    start_pos = QPoint(400, 400)  # 아이템 영역에서 충분히 떨어진 빈 공간
+    end_pos = QPoint(403, 403)  # 3x3 크기 (최소 5x5 미만)
+    
+    # 영역이 실제로 아이템과 겹치지 않는지 확인
+    selection_rect = QRect(start_pos, end_pos).normalized()
+    print(f"Selection rect: {selection_rect}, Item rect: {actual_item_rect}, Intersects: {selection_rect.intersects(actual_item_rect)}")
+    assert not selection_rect.intersects(actual_item_rect), "테스트 설정 오류: 선택 영역이 아이템과 겹침"
+    
+    # 마우스 프레스 이벤트
+    press_event = QMouseEvent(
+        QEvent.Type.MouseButtonPress,
+        QPointF(start_pos),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier
+    )
+    canvas_widget.canvas_mouse_press_event(press_event)
+    
+    # 영역 선택 모드가 시작되었는지 확인
+    assert canvas_widget.is_selecting is True, "영역 선택 모드가 시작되어야 함"
+    
+    move_event = QMouseEvent(
+        QEvent.Type.MouseMove,
+        QPointF(end_pos),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier
+    )
+    canvas_widget.canvas_mouse_move_event(move_event)
+    
+    release_event = QMouseEvent(
+        QEvent.Type.MouseButtonRelease,
+        QPointF(end_pos),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier
+    )
+    canvas_widget.canvas_mouse_release_event(release_event)
+    
+    # 영역 선택 모드가 종료되었는지 확인
+    assert canvas_widget.is_selecting is False, "영역 선택 모드가 종료되어야 함"
+    
+    # 너무 작은 영역이므로 선택되지 않아야 함
+    print(f"Final selection count: {len(canvas_widget.selected_items)}")
+    assert len(canvas_widget.selected_items) == 0
+    assert item.is_selected is False
+
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
 def test_canvas_click_on_furniture_vs_rectangle_selection(MockImageService, MockSupabaseClient, canvas_widget, qtbot, mocker):
     """가구 클릭과 영역 선택이 올바르게 구분되는지 테스트합니다."""
     # Canvas와 canvas_area 제대로 설정
@@ -1245,7 +1325,12 @@ def test_canvas_click_on_furniture_vs_rectangle_selection(MockImageService, Mock
     # 가구가 선택되고 영역 선택 모드는 비활성화되어야 함
     assert canvas_widget.is_selecting is False
     assert canvas_widget.rubber_band.isVisible() is False
-
+    assert len(canvas_widget.selected_items) == 1
+    assert item.is_selected is True
+    
+    # 선택 해제
+    canvas_widget.deselect_all_items()
+    
     # 빈 공간에서 클릭 (영역 선택이 시작되어야 함)
     empty_pos = QPoint(400, 400)  # 가구 영역에서 충분히 떨어진 빈 공간
     
