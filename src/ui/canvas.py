@@ -419,8 +419,8 @@ class Canvas(QWidget):
             self.canvas_area.customContextMenuRequested.connect(self.show_context_menu)
             self.canvas_area.mousePressEvent = self.canvas_mouse_press_event
             
-            # 5. 상태 초기화
-            self.is_new_collage = True
+            # 5. 상태 초기화 - 먼저 동적 리사이즈 중단
+            self.is_new_collage = False  # 윈도우 크기 조정 전에 False로 설정
             
             # 6. UI 강제 업데이트
             self.canvas_area.show()
@@ -441,12 +441,28 @@ class Canvas(QWidget):
             # 10. 윈도우 크기를 캔버스 크기에 맞춰 조정
             self.adjust_window_size_to_canvas(width, height)
             
-            # 11. 윈도우 크기 조정 후 무한 리사이즈 방지를 위해 상태 변경
-            # 잠시 후 is_new_collage를 False로 변경하여 동적 리사이즈 중단
-            QTimer.singleShot(1000, lambda: setattr(self, 'is_new_collage', False))
+            # 11. 윈도우 크기 조정 후 캔버스 크기 재확인 및 보정
+            QTimer.singleShot(100, lambda: self.verify_and_fix_canvas_size(width, height))
             
             print(f"[새 콜라주] 캔버스 완전 초기화 완료: {width}x{height}")
-            print(f"[새 콜라주] 1초 후 동적 리사이즈 중단 예정")
+            print(f"[새 콜라주] 동적 리사이즈 비활성화됨 - is_new_collage: False")
+    
+    def verify_and_fix_canvas_size(self, expected_width, expected_height):
+        """윈도우 크기 조정 후 캔버스 크기가 의도한 크기와 일치하는지 확인하고 보정합니다."""
+        current_width = self.canvas_area.width()
+        current_height = self.canvas_area.height()
+        
+        print(f"[캔버스 크기 확인] 예상: {expected_width}x{expected_height}, 실제: {current_width}x{current_height}")
+        
+        # 크기가 다르면 강제로 다시 설정
+        if current_width != expected_width or current_height != expected_height:
+            print(f"[캔버스 크기 보정] {expected_width}x{expected_height}로 재설정")
+            self.canvas_area.resize(expected_width, expected_height)
+            
+            # 한 번 더 확인
+            QTimer.singleShot(50, lambda: print(f"[캔버스 크기 최종 확인] {self.canvas_area.width()}x{self.canvas_area.height()}"))
+        else:
+            print(f"[캔버스 크기 확인] 올바른 크기 유지됨")
     
     def adjust_window_size_to_canvas(self, canvas_width, canvas_height):
         """캔버스 크기에 맞춰 윈도우 크기를 조정합니다."""
@@ -454,9 +470,12 @@ class Canvas(QWidget):
         if not main_window:
             return
         
-        # 각 패널의 크기 계산
-        right_panel_width = 400  # 우측 탐색 패널 기본 너비
-        bottom_panel_height = 200  # 하단 패널 기본 높이
+        # 현재 스플리터 크기 확인 (실제 패널 크기 사용)
+        splitter_sizes = main_window.splitter_horizontal.sizes()
+        right_panel_width = splitter_sizes[1] if len(splitter_sizes) > 1 else 400
+        
+        vertical_splitter_sizes = main_window.splitter_main_vertical.sizes()
+        bottom_panel_height = vertical_splitter_sizes[1] if len(vertical_splitter_sizes) > 1 else 200
         
         # 여백 및 기타 UI 요소 크기
         window_margin = 50  # 윈도우 여백
@@ -483,6 +502,7 @@ class Canvas(QWidget):
         final_height = max(final_height, 600)
         
         print(f"[윈도우 크기 조정] 캔버스: {canvas_width}x{canvas_height}")
+        print(f"[윈도우 크기 조정] 현재 스플리터 크기 - 우측 패널: {right_panel_width}, 하단 패널: {bottom_panel_height}")
         print(f"[윈도우 크기 조정] 계산된 윈도우 크기: {required_width}x{required_height}")
         print(f"[윈도우 크기 조정] 최종 윈도우 크기: {final_width}x{final_height}")
         
@@ -493,6 +513,44 @@ class Canvas(QWidget):
         window_x = (screen_geometry.width() - final_width) // 2
         window_y = (screen_geometry.height() - final_height) // 2
         main_window.move(window_x, window_y)
+        
+        # 윈도우 크기 조정 후 스플리터 크기 재조정으로 캔버스 영역 보장
+        QTimer.singleShot(50, lambda: self.adjust_splitter_for_canvas_size(canvas_width, canvas_height))
+    
+    def adjust_splitter_for_canvas_size(self, target_width, target_height):
+        """스플리터 크기를 조정하여 캔버스가 목표 크기를 가질 수 있도록 합니다."""
+        main_window = self.window()
+        if not main_window:
+            return
+        
+        # 현재 윈도우 전체 크기
+        window_width = main_window.width()
+        window_height = main_window.height()
+        
+        # 우측 패널은 현재 크기 유지하되, 캔버스가 목표 크기를 가질 수 있도록 조정
+        current_horizontal_sizes = main_window.splitter_horizontal.sizes()
+        current_vertical_sizes = main_window.splitter_main_vertical.sizes()
+        
+        # 수평 스플리터 조정 (캔버스 + 우측 패널)
+        right_panel_width = current_horizontal_sizes[1] if len(current_horizontal_sizes) > 1 else 400
+        available_width = window_width - 20  # 약간의 여백
+        canvas_width_target = max(target_width, available_width - right_panel_width)
+        
+        new_horizontal_sizes = [canvas_width_target, right_panel_width]
+        main_window.splitter_horizontal.setSizes(new_horizontal_sizes)
+        
+        # 수직 스플리터 조정 (상단 영역 + 하단 패널)
+        bottom_panel_height = current_vertical_sizes[1] if len(current_vertical_sizes) > 1 else 200
+        available_height = window_height - 50  # 메뉴바 등 여백
+        top_area_height = max(target_height + 20, available_height - bottom_panel_height)  # 캔버스 + 약간의 여백
+        
+        new_vertical_sizes = [top_area_height, bottom_panel_height]
+        main_window.splitter_main_vertical.setSizes(new_vertical_sizes)
+        
+        print(f"[스플리터 조정] 수평: {new_horizontal_sizes}, 수직: {new_vertical_sizes}")
+        
+        # 스플리터 조정 후 캔버스 크기 재확인
+        QTimer.singleShot(50, lambda: self.verify_and_fix_canvas_size(target_width, target_height))
 
     def _show_warning_message(self, title: str, message: str):
         """경고 메시지 박스를 표시하는 내부 헬퍼 메소드."""
