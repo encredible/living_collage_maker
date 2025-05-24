@@ -50,6 +50,9 @@ class SelectedFurniturePanel(QWidget):
         # 모델에 컬럼 너비 복원 콜백 설정
         self.selected_model.set_column_width_callback(self.setup_column_widths)
         
+        # 모델에 번호표 업데이트 콜백 설정
+        self.selected_model.set_number_label_callback(self.update_canvas_number_labels)
+        
         self.selected_table = QTableView()
         self.selected_table.setModel(self.selected_model)
         self.selected_table.setStyleSheet("""
@@ -263,6 +266,8 @@ class SelectedFurniturePanel(QWidget):
             if new_row >= 0:
                 # 모델 업데이트 완료 후 선택 복원 (약간의 지연을 두어 모델 업데이트 완료 대기)
                 QTimer.singleShot(0, lambda: self.select_row(new_row))
+                # 캔버스 번호표 업데이트
+                self.update_canvas_number_labels()
 
     def move_selected_down(self):
         """선택된 가구를 아래로 이동합니다."""
@@ -271,6 +276,8 @@ class SelectedFurniturePanel(QWidget):
             new_row = self.selected_model.move_furniture_down(furniture_name)
             if new_row >= 0:
                 QTimer.singleShot(0, lambda: self.select_row(new_row))
+                # 캔버스 번호표 업데이트
+                self.update_canvas_number_labels()
 
     def move_selected_to_top(self):
         """선택된 가구를 맨 위로 이동합니다."""
@@ -279,6 +286,8 @@ class SelectedFurniturePanel(QWidget):
             new_row = self.selected_model.move_furniture_to_top(furniture_name)
             if new_row >= 0:
                 QTimer.singleShot(0, lambda: self.select_row(new_row))
+                # 캔버스 번호표 업데이트
+                self.update_canvas_number_labels()
 
     def move_selected_to_bottom(self):
         """선택된 가구를 맨 아래로 이동합니다."""
@@ -287,6 +296,8 @@ class SelectedFurniturePanel(QWidget):
             new_row = self.selected_model.move_furniture_to_bottom(furniture_name)
             if new_row >= 0:
                 QTimer.singleShot(0, lambda: self.select_row(new_row))
+                # 캔버스 번호표 업데이트
+                self.update_canvas_number_labels()
 
     def show_sort_menu(self):
         """정렬 옵션 메뉴를 표시합니다."""
@@ -317,6 +328,8 @@ class SelectedFurniturePanel(QWidget):
         # 정렬 후 첫 번째 행 선택 (약간의 지연을 두어 모델 업데이트 완료 대기)
         if self.selected_model.rowCount() > 0:
             QTimer.singleShot(0, lambda: self.select_row(0))
+        # 캔버스 번호표 업데이트
+        self.update_canvas_number_labels()
 
     def select_row(self, row: int):
         """지정된 행을 선택합니다."""
@@ -466,6 +479,21 @@ class SelectedFurniturePanel(QWidget):
         self.update_summary()
 
         print(f"[선택된 가구 패널] 가구 목록 업데이트 완료, 총 {len(furniture_count)}개 타입")
+
+    def update_canvas_number_labels(self):
+        """캔버스의 번호표를 업데이트합니다."""
+        # 부모 위젯들을 순회하여 캔버스를 찾습니다
+        parent_widget = self.parent()
+        while parent_widget:
+            if hasattr(parent_widget, 'canvas'):
+                canvas = parent_widget.canvas
+                if hasattr(canvas, 'update_number_labels'):
+                    canvas.update_number_labels()
+                    print("[하단패널] 캔버스 번호표 업데이트 요청")
+                    return
+            parent_widget = parent_widget.parent()
+        
+        print("[하단패널] 캔버스를 찾을 수 없어 번호표 업데이트 실패")
 
 
 class BottomPanel(QWidget):

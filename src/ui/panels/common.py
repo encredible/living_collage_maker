@@ -372,10 +372,15 @@ class SelectedFurnitureTableModel(QStandardItemModel):
         self.furniture_count = {}  # 가구별 개수 저장
         self.furniture_order = []  # 가구 순서 저장 (가구 이름 리스트)
         self.column_width_callback = None  # 컬럼 너비 복원 콜백
+        self.number_label_callback = None  # 번호표 업데이트 콜백
     
     def set_column_width_callback(self, callback):
         """컬럼 너비 복원 콜백을 설정합니다."""
         self.column_width_callback = callback
+    
+    def set_number_label_callback(self, callback):
+        """번호표 업데이트 콜백을 설정합니다."""
+        self.number_label_callback = callback
     
     def supportedDropActions(self):
         """지원하는 드롭 액션을 반환합니다."""
@@ -601,6 +606,10 @@ class SelectedFurnitureTableModel(QStandardItemModel):
         # 모델 새로고침 후 컬럼 너비 복원
         if self.column_width_callback:
             self.column_width_callback()
+        
+        # 번호표 업데이트
+        if self.number_label_callback:
+            self.number_label_callback()
     
     def _format_size(self, width, depth, height):
         """크기 정보를 포맷팅합니다."""

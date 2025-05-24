@@ -4,7 +4,7 @@ import json
 import os
 
 from PyQt6.QtCore import (QPoint, QRect, Qt, QTimer, QByteArray, QBuffer, QIODevice, QSize)
-from PyQt6.QtGui import (QColor, QPainter, QPen, QPixmap, QTransform, QGuiApplication)
+from PyQt6.QtGui import (QPainter, QPixmap, QTransform, QGuiApplication)
 from PyQt6.QtWidgets import (QFileDialog,
                              QMenu,
                              QMessageBox, QVBoxLayout,
@@ -239,6 +239,8 @@ class Canvas(QWidget):
                     item.update()
             
             self.update_bottom_panel()
+            # 번호표 즉시 업데이트
+            self.canvas_area.update()
     
     # 가구 아이템 선택 처리 (다중 선택 지원)
     def select_furniture_item(self, item):
@@ -277,6 +279,8 @@ class Canvas(QWidget):
             item.update()
         
         self.update_bottom_panel()
+        # 번호표 즉시 업데이트
+        self.canvas_area.update()
     
     # 모든 가구 아이템 선택 해제
     def deselect_all_items(self):
@@ -285,6 +289,8 @@ class Canvas(QWidget):
             item.update()
         self.selected_items.clear()
         self.update_bottom_panel()
+        # 번호표 즉시 업데이트
+        self.canvas_area.update()
     
     # 하위 호환성을 위한 프로퍼티
     @property
@@ -828,6 +834,8 @@ class Canvas(QWidget):
                 item.show()
                 self.furniture_items.append(item)
                 self.select_furniture_item(item)
+                # 하단 패널 업데이트 (번호표 포함)
+                self.update_bottom_panel()
                 self._save_state_and_update_actions() # 여기서 한 번 저장 (아이템 추가 작업 자체)
                 event.acceptProposedAction()
         except Exception as e:
@@ -845,203 +853,58 @@ class Canvas(QWidget):
             
     def update_bottom_panel(self):
         """하단 패널을 업데이트합니다."""
-        # 메인 윈도우에서 하단 패널 업데이트
-        main_window = self.window()
-        if main_window and hasattr(main_window, 'bottom_panel'):
-            # MainWindow의 bottom_panel 속성에 직접 접근
-            main_window.bottom_panel.update_panel(self.furniture_items)
-        else:
-            print("[Canvas] MainWindow 또는 bottom_panel을 찾을 수 없습니다.")
+        # 부모 위젯에서 bottom_panel을 찾아서 업데이트
+        parent_widget = self.parent()
+        while parent_widget:
+            if hasattr(parent_widget, 'bottom_panel'):
+                parent_widget.bottom_panel.update_panel(self.furniture_items)
+                # 번호표 업데이트
+                self.update_number_labels()
+                return
+            parent_widget = parent_widget.parent()
+        
+        print("[Canvas] 하단 패널을 찾을 수 없습니다.")
     
-    def paintEvent(self, event):
-        # Canvas 자체의 paintEvent는 이제 배경을 그리지 않거나 최소한의 것만 그림
-        # 대부분의 그리기는 self.canvas_area에서 일어나거나, 
-        # self.canvas_area의 내용을 기반으로 Canvas가 추가적인 정보를 그림(예: 크기 텍스트)
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        # Canvas의 배경은 투명하게 처리했으므로, 여기서는 아무것도 그리지 않거나
-        # canvas_area 주변에만 필요한 것을 그릴 수 있음.
-
-        # canvas_area의 현재 크기를 가져와서 Canvas에 표시 (디버깅 또는 정보 제공용)
-        if not self.is_new_collage and hasattr(self, 'canvas_area'):
-            pen = QPen(QColor("#888888")) # 다른 색으로 표시
-            pen.setWidth(1)
-            painter.setPen(pen)
-            size_text = f"Area: {self.canvas_area.width()} x {self.canvas_area.height()} px"
-            # Canvas의 왼쪽 상단에 canvas_area 크기 표시
-            painter.drawText(QRect(5, 5, self.width() - 10, 20), 
-                          Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
-                          size_text)
-        # super().paintEvent(event) # 만약 QWidget의 기본 paintEvent가 필요하다면
-    
-    def export_collage(self):
-        """현재 콜라주를 이미지로 내보냅니다."""
-        if not self.furniture_items:
-            self._show_warning_message("경고", "내보낼 콜라주가 없습니다.")
-            return
+    def update_number_labels(self):
+        """캔버스의 가구 아이템들에 번호표를 업데이트합니다."""
+        # 하단 패널에서 가구 순서 정보 가져오기
+        parent_widget = self.parent()
+        while parent_widget:
+            if hasattr(parent_widget, 'bottom_panel'):
+                bottom_panel = parent_widget.bottom_panel
+                if hasattr(bottom_panel, 'selected_panel'):
+                    selected_panel = bottom_panel.selected_panel
+                    if hasattr(selected_panel, 'selected_model'):
+                        model = selected_panel.selected_model
+                        
+                        # 캔버스의 각 가구 아이템에 번호 설정
+                        for furniture_item in self.furniture_items:
+                            furniture_name = furniture_item.furniture.name
+                            
+                            # 하단 패널에서 해당 가구의 순서 번호 찾기
+                            number = 0
+                            for i, order_name in enumerate(model.furniture_order):
+                                if order_name == furniture_name:
+                                    number = i + 1
+                                    break
+                            
+                            # 가구 아이템에 번호 설정
+                            furniture_item.set_number_label(number)
+                        
+                        # CanvasArea 다시 그리기 (번호표 표시를 위해)
+                        self.canvas_area.update()
+                        
+                        print(f"[Canvas] 번호표 업데이트 완료: {len(self.furniture_items)}개 아이템")
+                        return
+                break
+            parent_widget = parent_widget.parent()
         
-        # 파일 저장 다이얼로그
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "콜라주 저장",
-            os.path.expanduser("~/Desktop/collage.png"),
-            "PNG 이미지 (*.png);;JPEG 이미지 (*.jpg);;모든 파일 (*.*)"
-        )
+        # 하단 패널을 찾을 수 없는 경우 기본 순서대로 번호 설정
+        for i, furniture_item in enumerate(self.furniture_items):
+            furniture_item.set_number_label(i + 1)
         
-        if file_path:
-            try:
-                # 공통 이미지 생성 메서드 사용
-                image = self._generate_collage_image()
-                
-                # 이미지 저장
-                image.save(file_path)
-                self._show_information_message("성공", "콜라주가 성공적으로 저장되었습니다.")
-                
-            except Exception as e:
-                self._show_critical_message("오류", f"이미지 저장 중 오류가 발생했습니다: {str(e)}")
-
-    def keyPressEvent(self, event):
-        """키보드 입력 처리 (아이템 이동, 삭제 등)"""
-        if not self.selected_items:
-            super().keyPressEvent(event)
-            return
-
-        action_taken = False
-        delta_x = 0
-        delta_y = 0
-        
-        modifiers = QGuiApplication.keyboardModifiers()
-        move_step = 1 if modifiers & Qt.KeyboardModifier.ControlModifier else 5
-
-        if event.key() == Qt.Key.Key_Left:
-            delta_x = -move_step
-            action_taken = True
-        elif event.key() == Qt.Key.Key_Right:
-            delta_x = move_step
-            action_taken = True
-        elif event.key() == Qt.Key.Key_Up:
-            delta_y = -move_step
-            action_taken = True
-        elif event.key() == Qt.Key.Key_Down:
-            delta_y = move_step
-            action_taken = True
-        elif event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
-            items_to_delete = list(self.selected_items)
-            if items_to_delete:
-                for item_to_del in items_to_delete:
-                    if item_to_del in self.furniture_items:
-                        self.furniture_items.remove(item_to_del)
-                    item_to_del.deleteLater()
-                self.selected_items.clear()
-                self.update_bottom_panel()
-                self.canvas_area.update()
-                action_taken = True
-            event.accept()
-            if action_taken:
-                self._save_state_and_update_actions() # 상태 저장
-            return 
-        else:
-            super().keyPressEvent(event)
-            return
-
-        if delta_x != 0 or delta_y != 0:
-            for item_mv in self.selected_items:
-                new_pos = item_mv.pos() + QPoint(delta_x, delta_y)
-                item_mv.move(new_pos)
-                item_mv.update()
-            self.update_bottom_panel()
-            self.canvas_area.update()
-            event.accept()
-        
-        if action_taken:
-            self._save_state_and_update_actions() # 상태 저장
-    
-    def resize_canvas(self):
-        """캔버스 크기를 조절합니다."""
-        current_width = self.canvas_area.width()
-        current_height = self.canvas_area.height()
-        
-        dialog = CanvasSizeDialog(
-            initial_width=current_width,
-            initial_height=current_height,
-            title="캔버스 크기 조절",
-            parent=self
-        )
-        
-        if dialog.exec():
-            new_width, new_height = dialog.get_canvas_size()
-            # self.canvas_area.setFixedSize(new_width, new_height) # -> resize로 변경
-            self.canvas_area.resize(new_width, new_height)
-            # self.is_new_collage = False # 명시적 크기 조절 후에는 동적 리사이즈 중단 -> 이 로직 제거
-            self.canvas_area.setMinimumSize(self.CANVAS_MIN_WIDTH, self.CANVAS_MIN_HEIGHT)
-            self.handle_furniture_out_of_bounds()
-            
-            parent_window = self.window()
-            if hasattr(parent_window, 'canvas_size_changed'):
-                parent_window.canvas_size_changed()
-            
-            reply = QMessageBox.question(
-                self,
-                "윈도우 크기 조정",
-                "캔버스 크기에 맞춰 윈도우 크기도 조정하시겠습니까?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes
-            )
-            
-            if reply == QMessageBox.StandardButton.Yes:
-                self.adjust_window_size_to_canvas(new_width, new_height)
-            
-            self._show_information_message(
-                "알림", 
-                f"캔버스 크기가 {new_width}x{new_height}로 변경되었습니다."
-            )
-            self._save_state_and_update_actions() # 상태 저장
-    
-    def handle_furniture_out_of_bounds(self):
-        """캔버스 영역을 벗어난 가구들을 캔버스 내로 이동시킵니다."""
-        canvas_width = self.canvas_area.width()
-        canvas_height = self.canvas_area.height()
-        
-        moved_items = []
-        
-        for item in self.furniture_items:
-            item_rect = item.geometry()
-            moved = False
-            
-            # 오른쪽 경계 체크
-            if item_rect.right() > canvas_width:
-                new_x = max(0, canvas_width - item.width())
-                item.move(new_x, item.y())
-                moved = True
-            
-            # 아래쪽 경계 체크
-            if item_rect.bottom() > canvas_height:
-                new_y = max(0, canvas_height - item.height())
-                item.move(item.x(), new_y)
-                moved = True
-            
-            # 왼쪽 경계 체크 (음수 좌표)
-            if item.x() < 0:
-                item.move(0, item.y())
-                moved = True
-            
-            # 위쪽 경계 체크 (음수 좌표)
-            if item.y() < 0:
-                item.move(item.x(), 0)
-                moved = True
-            
-            if moved:
-                moved_items.append(item.furniture.name)
-        
-        # 이동된 가구가 있으면 알림
-        if moved_items:
-            if len(moved_items) == 1:
-                message = f"'{moved_items[0]}' 가구가 캔버스 내로 이동되었습니다."
-            else:
-                message = f"{len(moved_items)}개의 가구가 캔버스 내로 이동되었습니다."
-            
-            self._show_information_message("가구 위치 조정", message)
+        # CanvasArea 다시 그리기
+        self.canvas_area.update()
 
     def resizeEvent(self, event):
         """Canvas 크기 변경 시 호출됩니다."""
@@ -1244,8 +1107,62 @@ class Canvas(QWidget):
             if item_to_remove in self.selected_items:
                 self.selected_items.remove(item_to_remove)
             
+            # 하단 패널 업데이트 (번호표 포함)
+            self.update_bottom_panel()
             self._save_state_and_update_actions() # 상태 저장
             self.canvas_area.update() # 캔버스 영역 갱신
             print(f"아이템 제거됨: {item_to_remove.furniture.name}, 남은 아이템: {len(self.furniture_items)}")
         else:
             print(f"제거할 아이템을 찾을 수 없음: {item_to_remove}")
+
+    def resize_canvas(self):
+        """기존 가구들을 유지하면서 캔버스 크기만 조절합니다."""
+        dialog = CanvasSizeDialog(self)
+        # 현재 캔버스 크기를 기본값으로 설정
+        dialog.width_input.setValue(self.canvas_area.width())
+        dialog.height_input.setValue(self.canvas_area.height())
+        
+        if dialog.exec():
+            new_width, new_height = dialog.get_size()
+            
+            # 캔버스 크기만 변경 (가구는 그대로 유지)
+            self.canvas_area.resize(new_width, new_height)
+            
+            # 윈도우 크기를 새 캔버스 크기에 맞춰 조정
+            self.adjust_window_size_to_canvas(new_width, new_height)
+            
+            # 부모 윈도우에 크기 변경 알림
+            parent_window = self.window()
+            if hasattr(parent_window, 'canvas_size_changed'):
+                parent_window.canvas_size_changed()
+            
+            print(f"[캔버스 크기 조절] 새 크기: {new_width}x{new_height}")
+            self._save_state_and_update_actions() # 상태 저장
+
+    def export_collage(self):
+        """현재 콜라주를 이미지 파일로 내보냅니다."""
+        if not self.furniture_items:
+            self._show_warning_message("경고", "내보낼 콜라주가 없습니다.")
+            return
+        
+        # 파일 저장 다이얼로그
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "콜라주 내보내기",
+            os.path.expanduser("~/Desktop/collage.png"),
+            "PNG 파일 (*.png);;JPG 파일 (*.jpg);;모든 파일 (*.*)"
+        )
+        
+        if file_path:
+            try:
+                # 콜라주 이미지 생성
+                collage_image = self._generate_collage_image()
+                
+                # 파일 저장
+                if collage_image.save(file_path):
+                    self._show_information_message("성공", "콜라주가 성공적으로 내보내졌습니다.")
+                else:
+                    self._show_critical_message("오류", "콜라주 내보내기에 실패했습니다.")
+                    
+            except Exception as e:
+                self._show_critical_message("오류", f"콜라주 내보내기 중 오류가 발생했습니다: {str(e)}")

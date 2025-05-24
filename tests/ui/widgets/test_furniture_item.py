@@ -1325,3 +1325,61 @@ def test_furniture_item_resize_minimum_size_enforcement(MockImageService, MockSu
     # 최소 크기 100x100이 유지되는지 확인
     assert item.width() >= 100, f"너비가 최소 크기 미만: {item.width()}"
     assert item.height() >= 100, f"높이가 최소 크기 미만: {item.height()}"
+
+@pytest.fixture
+def sample_furniture():
+    """테스트용 가구 데이터"""
+    return Furniture(
+        id='1', brand='TestBrand', name='Test Chair', image_filename='chair.png', price=100,
+        type='Chair', description='Test Description', link='http://example.com',
+        color='Brown', locations=['Living Room'], styles=['Modern'],
+        width=50, depth=50, height=100, seat_height=45, author='test_author', created_at=''
+    )
+
+
+@pytest.fixture
+def furniture_item(qtbot, sample_furniture, monkeypatch):
+    """테스트용 FurnitureItem"""
+    # 네트워크 호출 모킹
+    def mock_get_furniture_image(filename):
+        return b"mock_image_data"
+    
+    def mock_download_and_cache_image(data, filename):
+        pixmap = QPixmap(200, 200)
+        return pixmap
+    
+    monkeypatch.setattr("src.ui.widgets.furniture_item.SupabaseClient.get_furniture_image", mock_get_furniture_image)
+    monkeypatch.setattr("src.ui.widgets.furniture_item.ImageService.download_and_cache_image", mock_download_and_cache_image)
+    
+    parent = QWidget()
+    qtbot.addWidget(parent)  # 부모를 먼저 qtbot에 등록
+    item = FurnitureItem(sample_furniture, parent)
+    item.show()  # 위젯을 표시
+    return item
+
+
+def test_furniture_item_number_label_initialization(furniture_item):
+    """FurnitureItem의 번호표 초기화 테스트"""
+    # 번호표 기본값 확인
+    assert furniture_item.number_label_value == 0
+    assert furniture_item.show_number_label == True
+
+def test_furniture_item_number_label_setting(furniture_item):
+    """FurnitureItem의 번호표 설정 테스트"""
+    # 번호표 값 설정
+    furniture_item.set_number_label(5)
+    assert furniture_item.get_number_label() == 5
+    
+    # 번호표 표시 설정
+    furniture_item.show_number_label_enabled(False)
+    assert furniture_item.show_number_label == False
+    
+    furniture_item.show_number_label_enabled(True)
+    assert furniture_item.show_number_label == True
+
+def test_furniture_item_number_label_value_change(furniture_item):
+    """FurnitureItem의 번호표 값 변경 테스트"""
+    # 여러 번호로 변경 테스트
+    for number in [1, 10, 99]:
+        furniture_item.set_number_label(number)
+        assert furniture_item.get_number_label() == number
