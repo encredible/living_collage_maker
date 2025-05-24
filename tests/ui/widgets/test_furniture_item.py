@@ -1,4 +1,4 @@
-from unittest.mock import patch, ANY, MagicMock
+from unittest.mock import MagicMock, patch, ANY
 
 import pytest
 from PyQt6.QtCore import QBuffer, QIODevice, QPoint, Qt, QPointF, QEvent
@@ -9,7 +9,7 @@ from src.models.furniture import Furniture  # Furniture 모델 임포트
 from src.services.image_service import ImageService  # ImageService 임포트 (모의 대상)
 from src.services.supabase_client import SupabaseClient  # SupabaseClient 임포트 (모의 대상)
 from src.ui.canvas import Canvas  # Canvas 클래스 임포트
-from src.ui.widgets import FurnitureItem  # FurnitureItem 임포트
+from src.ui.widgets.furniture_item import FurnitureItem, ResizeHandle  # FurnitureItem과 ResizeHandle 임포트
 
 
 @pytest.fixture
@@ -305,22 +305,24 @@ def test_furniture_item_drag_move(MockImageService, MockSupabaseClient, initiali
     item.move(100, 100)
     item.show()
     canvas_widget.furniture_items.append(item)
-    # qtbot.addWidget(item) # 명시적 addWidget은 필수는 아님
+    # 아이템을 선택 상태로 만들기
+    canvas_widget.select_furniture_item(item)
+    qtbot.addWidget(canvas_widget) # 캔버스 위젯도 qtbot에 등록
 
     mock_load_image.assert_called_once() # 이 아이템에 대해 load_image 호출 확인
 
     original_pos = item.pos()
     
-    start_drag_pos = QPoint(5, 5)
+    start_drag_pos = QPoint(50, 50)  # 아이템 중앙에서 드래그 시작 (핸들 위치가 아닌)
     qtbot.mousePress(item, Qt.MouseButton.LeftButton, pos=start_drag_pos)
     
-    end_drag_pos_local = QPoint(25, 35)
+    end_drag_pos_local = QPoint(70, 80)  # 20, 30 픽셀 이동
     qtbot.mouseMove(item, pos=end_drag_pos_local)
     
     qtbot.mouseRelease(item, Qt.MouseButton.LeftButton)
 
     expected_pos = original_pos + (end_drag_pos_local - start_drag_pos)
-    assert item.pos() == expected_pos 
+    assert item.pos() == expected_pos
 
 @patch('src.ui.widgets.furniture_item.SupabaseClient')
 @patch('src.ui.widgets.furniture_item.ImageService')
@@ -348,28 +350,21 @@ def test_furniture_item_resize_drag_handle(MockImageService, MockSupabaseClient,
     initial_size = item.size()
     assert initial_size.width() == 100 and initial_size.height() == 100
 
-    # 오른쪽 아래 리사이즈 핸들 위치 (대략적인 계산, 실제 핸들 위치에 따라 조정 필요)
-    # FurnitureItem.paintEvent 로직에서 핸들 위치를 정확히 알아야 함.
-    # 여기서는 아이템의 오른쪽 아래 모서리를 드래그한다고 가정
-    # 오른쪽 아래 핸들은 self.resize_handles[7] (인덱스 7) -> QRect(w - s, h - s, s, s)
-    # 핸들 크기 self.handle_size = 6
-    handle_size = 6 
-    # 핸들의 좌상단 점 클릭
-    handle_pos_in_item = QPoint(initial_size.width() - handle_size, initial_size.height() - handle_size)
+    # 오른쪽 아래 리사이즈 핸들 위치
+    item.update_resize_handles() # 핸들 위치 명시적 업데이트
+    bottom_right_handle = item.resize_handles[ResizeHandle.BOTTOM_RIGHT]
+    # 핸들의 중심점을 클릭하도록 수정
+    handle_click_pos = bottom_right_handle.center()
 
     # 드래그하여 크기를 50, 30 만큼 늘림
     drag_x_by = 50
     drag_y_by = 30
 
-    item.update_resize_handle() # 핸들 위치 명시적 업데이트
     # 드래그 시작 (리사이즈 핸들 위치에서 마우스 버튼 누름)
-    qtbot.mousePress(item, Qt.MouseButton.LeftButton, pos=handle_pos_in_item)
+    qtbot.mousePress(item, Qt.MouseButton.LeftButton, pos=handle_click_pos)
 
     # 드래그 이동 (마우스 이동)
-    # item 좌표계 기준이므로, 핸들 초기 위치 + 드래그 양
-    # 실제로는 global 좌표로 변환 후 item.mouseMoveEvent로 전달됨
-    # qtbot.mouseMove는 target widget의 좌표계를 사용함
-    move_to_pos_in_item = handle_pos_in_item + QPoint(drag_x_by, drag_y_by)
+    move_to_pos_in_item = handle_click_pos + QPoint(drag_x_by, drag_y_by)
     qtbot.mouseMove(item, pos=move_to_pos_in_item, delay=-1)
 
     # 드래그 종료 (마우스 버튼 뗌)
@@ -409,10 +404,10 @@ def test_furniture_item_resize_aspect_ratio_locked(MockImageService, MockSupabas
     assert initial_aspect_ratio == 1.0 # dummy_qpixmap은 100x100
 
     # 오른쪽 아래 리사이즈 핸들 위치
-    item.update_resize_handle() # 핸들 위치 명시적 업데이트
-    resize_handle_rect = item.resize_handle 
+    item.update_resize_handles() # 핸들 위치 명시적 업데이트
+    bottom_right_handle = item.resize_handles[ResizeHandle.BOTTOM_RIGHT]
     # 핸들의 중심점을 클릭하도록 수정
-    handle_click_pos = resize_handle_rect.center()
+    handle_click_pos = bottom_right_handle.center()
 
     drag_x_by = 50 # 너비를 50 늘리려고 시도
     drag_y_by = 30 # 높이를 30 늘리려고 시도 (Shift로 인해 무시될 수 있음)
@@ -442,6 +437,63 @@ def test_furniture_item_resize_aspect_ratio_locked(MockImageService, MockSupabas
     assert final_size.width() == initial_size.width() + drag_x_by
     assert abs(final_size.height() - (initial_size.height() * (final_size.width() / initial_size.width()))) < 1e-5 # 부동소수점 비교
     assert abs(final_aspect_ratio - initial_aspect_ratio) < 1e-5
+
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
+def test_furniture_item_resize_top_left_handle(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
+    """좌상단 리사이즈 핸들 드래그 시 크기와 위치가 모두 변경되는지 테스트합니다."""
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    MockImageService.return_value.download_and_cache_image.return_value = dummy_qpixmap
+    MockSupabaseClient.return_value.get_furniture_image.return_value = b"fake_image_data"
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance._image_cache = mocker.MagicMock()
+
+    canvas_widget = Canvas()
+    item = FurnitureItem(furniture_obj, parent=canvas_widget.canvas_area)
+    item.pixmap = dummy_qpixmap.copy() # 100x100
+    item.original_pixmap = dummy_qpixmap.copy()
+    item.original_ratio = 1.0
+    item.setFixedSize(dummy_qpixmap.size())
+    item.move(100, 100)  # 충분한 여백을 두고 배치
+    canvas_widget.select_furniture_item(item) 
+    item.show()
+    canvas_widget.furniture_items.append(item)
+    qtbot.addWidget(canvas_widget)
+
+    initial_size = item.size()
+    initial_pos = item.pos()
+    assert initial_size.width() == 100 and initial_size.height() == 100
+    assert initial_pos.x() == 100 and initial_pos.y() == 100
+
+    # 좌상단 리사이즈 핸들 위치
+    item.update_resize_handles()
+    top_left_handle = item.resize_handles[ResizeHandle.TOP_LEFT]
+    handle_click_pos = top_left_handle.center()
+
+    # 좌상단 핸들을 왼쪽 위로 드래그 (크기 증가, 위치 변경)
+    drag_x_by = -30  # 왼쪽으로 30픽셀 (크기 30픽셀 증가)
+    drag_y_by = -20  # 위로 20픽셀 (크기 20픽셀 증가)
+
+    # 드래그 시작
+    qtbot.mousePress(item, Qt.MouseButton.LeftButton, pos=handle_click_pos)
+
+    # 드래그 이동
+    move_to_pos_in_item = handle_click_pos + QPoint(drag_x_by, drag_y_by)
+    qtbot.mouseMove(item, pos=move_to_pos_in_item, delay=-1)
+
+    # 드래그 종료
+    qtbot.mouseRelease(item, Qt.MouseButton.LeftButton, pos=move_to_pos_in_item, delay=-1)
+
+    # 최종 크기와 위치 확인
+    expected_width = initial_size.width() - drag_x_by  # 130
+    expected_height = initial_size.height() - drag_y_by  # 120
+    expected_x = initial_pos.x() + drag_x_by  # 70
+    expected_y = initial_pos.y() + drag_y_by  # 80
+
+    assert item.width() == expected_width
+    assert item.height() == expected_height
+    assert item.pos().x() == expected_x
+    assert item.pos().y() == expected_y
 
 @patch('src.ui.widgets.furniture_item.SupabaseClient')
 @patch('src.ui.widgets.furniture_item.ImageService')
@@ -898,7 +950,9 @@ def test_furniture_item_resize_bounds_check(qtbot, mocker):
     
     # 리사이즈 시작 설정
     item.is_resizing = True
+    item.active_handle = ResizeHandle.BOTTOM_RIGHT  # 우하단 핸들로 설정
     item.original_size_on_resize = item.size()
+    item.original_pos_on_resize = item.pos()  # 위치도 저장
     item.resize_mouse_start_pos = QPoint(10, 10)  # 리사이즈 핸들 시작 위치
     item.maintain_aspect_ratio_on_press = False
     
@@ -966,8 +1020,10 @@ def test_furniture_item_resize_bounds_check_with_aspect_ratio(qtbot, mocker):
     
     # 비율 유지 리사이즈 시작 설정
     item.is_resizing = True
+    item.active_handle = ResizeHandle.BOTTOM_RIGHT  # 우하단 핸들로 설정
     item.original_size_on_resize = item.size()
-    item.resize_mouse_start_pos = QPoint(10, 10)
+    item.original_pos_on_resize = item.pos()  # 위치도 저장
+    item.resize_mouse_start_pos = QPoint(10, 10)  # 리사이즈 핸들 시작 위치
     item.maintain_aspect_ratio_on_press = True  # 비율 유지 모드
     
     # 크게 리사이즈하려고 시도
@@ -1046,3 +1102,226 @@ def test_furniture_item_no_movement_with_ctrl_key(qtbot, mocker):
     # 위치가 변경되지 않았는지 확인
     position_after_drag = item.pos()
     assert position_before_drag == position_after_drag, "컨트롤 키를 누른 상태에서는 드래그 이동이 방지되어야 합니다" 
+
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
+def test_furniture_item_resize_top_handle(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
+    """상단 리사이즈 핸들 드래그 시 높이와 Y 위치가 변경되는지 테스트합니다."""
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    MockImageService.return_value.download_and_cache_image.return_value = dummy_qpixmap
+    MockSupabaseClient.return_value.get_furniture_image.return_value = b"fake_image_data"
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance._image_cache = mocker.MagicMock()
+
+    canvas_widget = Canvas()
+    item = FurnitureItem(furniture_obj, parent=canvas_widget.canvas_area)
+    item.pixmap = dummy_qpixmap.copy()
+    item.original_pixmap = dummy_qpixmap.copy()
+    item.original_ratio = 1.0
+    item.setFixedSize(dummy_qpixmap.size())
+    item.move(100, 100)
+    canvas_widget.select_furniture_item(item) 
+    item.show()
+    canvas_widget.furniture_items.append(item)
+    qtbot.addWidget(canvas_widget)
+
+    initial_size = item.size()
+    initial_pos = item.pos()
+
+    # 상단 리사이즈 핸들 위치
+    item.update_resize_handles()
+    top_handle = item.resize_handles[ResizeHandle.TOP]
+    handle_click_pos = top_handle.center()
+
+    # 상단 핸들을 위로 드래그 (높이 증가, Y 위치 변경)
+    drag_y_by = -25  # 위로 25픽셀 (높이 25픽셀 증가)
+
+    qtbot.mousePress(item, Qt.MouseButton.LeftButton, pos=handle_click_pos)
+    move_to_pos_in_item = handle_click_pos + QPoint(0, drag_y_by)
+    qtbot.mouseMove(item, pos=move_to_pos_in_item, delay=-1)
+    qtbot.mouseRelease(item, Qt.MouseButton.LeftButton, pos=move_to_pos_in_item, delay=-1)
+
+    # 높이와 Y 위치 변경 확인 (너비는 그대로)
+    expected_height = initial_size.height() - drag_y_by  # 125
+    expected_y = initial_pos.y() + drag_y_by  # 75
+    
+    assert item.width() == initial_size.width(), "너비는 변경되지 않아야 함"
+    assert item.height() == expected_height
+    assert item.pos().x() == initial_pos.x(), "X 위치는 변경되지 않아야 함"
+    assert item.pos().y() == expected_y
+
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
+def test_furniture_item_resize_bottom_handle(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
+    """하단 리사이즈 핸들 드래그 시 높이만 변경되는지 테스트합니다."""
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    MockImageService.return_value.download_and_cache_image.return_value = dummy_qpixmap
+    MockSupabaseClient.return_value.get_furniture_image.return_value = b"fake_image_data"
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance._image_cache = mocker.MagicMock()
+
+    canvas_widget = Canvas()
+    item = FurnitureItem(furniture_obj, parent=canvas_widget.canvas_area)
+    item.pixmap = dummy_qpixmap.copy()
+    item.original_pixmap = dummy_qpixmap.copy()
+    item.original_ratio = 1.0
+    item.setFixedSize(dummy_qpixmap.size())
+    item.move(100, 100)
+    canvas_widget.select_furniture_item(item) 
+    item.show()
+    canvas_widget.furniture_items.append(item)
+    qtbot.addWidget(canvas_widget)
+
+    initial_size = item.size()
+    initial_pos = item.pos()
+
+    # 하단 리사이즈 핸들 위치
+    item.update_resize_handles()
+    bottom_handle = item.resize_handles[ResizeHandle.BOTTOM]
+    handle_click_pos = bottom_handle.center()
+
+    # 하단 핸들을 아래로 드래그 (높이 증가, 위치는 그대로)
+    drag_y_by = 40  # 아래로 40픽셀 (높이 40픽셀 증가)
+
+    qtbot.mousePress(item, Qt.MouseButton.LeftButton, pos=handle_click_pos)
+    move_to_pos_in_item = handle_click_pos + QPoint(0, drag_y_by)
+    qtbot.mouseMove(item, pos=move_to_pos_in_item, delay=-1)
+    qtbot.mouseRelease(item, Qt.MouseButton.LeftButton, pos=move_to_pos_in_item, delay=-1)
+
+    # 높이만 변경 확인 (너비와 위치는 그대로)
+    expected_height = initial_size.height() + drag_y_by  # 140
+    
+    assert item.width() == initial_size.width(), "너비는 변경되지 않아야 함"
+    assert item.height() == expected_height
+    assert item.pos() == initial_pos, "위치는 변경되지 않아야 함"
+
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
+def test_furniture_item_resize_left_handle(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
+    """좌측 리사이즈 핸들 드래그 시 너비와 X 위치가 변경되는지 테스트합니다."""
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    MockImageService.return_value.download_and_cache_image.return_value = dummy_qpixmap
+    MockSupabaseClient.return_value.get_furniture_image.return_value = b"fake_image_data"
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance._image_cache = mocker.MagicMock()
+
+    canvas_widget = Canvas()
+    item = FurnitureItem(furniture_obj, parent=canvas_widget.canvas_area)
+    item.pixmap = dummy_qpixmap.copy()
+    item.original_pixmap = dummy_qpixmap.copy()
+    item.original_ratio = 1.0
+    item.setFixedSize(dummy_qpixmap.size())
+    item.move(100, 100)
+    canvas_widget.select_furniture_item(item) 
+    item.show()
+    canvas_widget.furniture_items.append(item)
+    qtbot.addWidget(canvas_widget)
+
+    initial_size = item.size()
+    initial_pos = item.pos()
+
+    # 좌측 리사이즈 핸들 위치
+    item.update_resize_handles()
+    left_handle = item.resize_handles[ResizeHandle.LEFT]
+    handle_click_pos = left_handle.center()
+
+    # 좌측 핸들을 왼쪽으로 드래그 (너비 증가, X 위치 변경)
+    drag_x_by = -35  # 왼쪽으로 35픽셀 (너비 35픽셀 증가)
+
+    qtbot.mousePress(item, Qt.MouseButton.LeftButton, pos=handle_click_pos)
+    move_to_pos_in_item = handle_click_pos + QPoint(drag_x_by, 0)
+    qtbot.mouseMove(item, pos=move_to_pos_in_item, delay=-1)
+    qtbot.mouseRelease(item, Qt.MouseButton.LeftButton, pos=move_to_pos_in_item, delay=-1)
+
+    # 너비와 X 위치 변경 확인 (높이는 그대로)
+    expected_width = initial_size.width() - drag_x_by  # 135
+    expected_x = initial_pos.x() + drag_x_by  # 65
+    
+    assert item.width() == expected_width
+    assert item.height() == initial_size.height(), "높이는 변경되지 않아야 함"
+    assert item.pos().x() == expected_x
+    assert item.pos().y() == initial_pos.y(), "Y 위치는 변경되지 않아야 함"
+
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
+def test_furniture_item_resize_right_handle(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
+    """우측 리사이즈 핸들 드래그 시 너비만 변경되는지 테스트합니다."""
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    MockImageService.return_value.download_and_cache_image.return_value = dummy_qpixmap
+    MockSupabaseClient.return_value.get_furniture_image.return_value = b"fake_image_data"
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance._image_cache = mocker.MagicMock()
+
+    canvas_widget = Canvas()
+    item = FurnitureItem(furniture_obj, parent=canvas_widget.canvas_area)
+    item.pixmap = dummy_qpixmap.copy()
+    item.original_pixmap = dummy_qpixmap.copy()
+    item.original_ratio = 1.0
+    item.setFixedSize(dummy_qpixmap.size())
+    item.move(100, 100)
+    canvas_widget.select_furniture_item(item) 
+    item.show()
+    canvas_widget.furniture_items.append(item)
+    qtbot.addWidget(canvas_widget)
+
+    initial_size = item.size()
+    initial_pos = item.pos()
+
+    # 우측 리사이즈 핸들 위치
+    item.update_resize_handles()
+    right_handle = item.resize_handles[ResizeHandle.RIGHT]
+    handle_click_pos = right_handle.center()
+
+    # 우측 핸들을 오른쪽으로 드래그 (너비 증가, 위치는 그대로)
+    drag_x_by = 45  # 오른쪽으로 45픽셀 (너비 45픽셀 증가)
+
+    qtbot.mousePress(item, Qt.MouseButton.LeftButton, pos=handle_click_pos)
+    move_to_pos_in_item = handle_click_pos + QPoint(drag_x_by, 0)
+    qtbot.mouseMove(item, pos=move_to_pos_in_item, delay=-1)
+    qtbot.mouseRelease(item, Qt.MouseButton.LeftButton, pos=move_to_pos_in_item, delay=-1)
+
+    # 너비만 변경 확인 (높이와 위치는 그대로)
+    expected_width = initial_size.width() + drag_x_by  # 145
+    
+    assert item.width() == expected_width
+    assert item.height() == initial_size.height(), "높이는 변경되지 않아야 함"
+    assert item.pos() == initial_pos, "위치는 변경되지 않아야 함"
+
+@patch('src.ui.widgets.furniture_item.SupabaseClient')
+@patch('src.ui.widgets.furniture_item.ImageService')
+def test_furniture_item_resize_minimum_size_enforcement(MockImageService, MockSupabaseClient, initialize_image_adjuster, furniture_obj, dummy_qpixmap, qtbot, mocker):
+    """리사이즈 시 최소 크기(100x100) 제한이 적용되는지 테스트합니다."""
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    MockImageService.return_value.download_and_cache_image.return_value = dummy_qpixmap
+    MockSupabaseClient.return_value.get_furniture_image.return_value = b"fake_image_data"
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance._image_cache = mocker.MagicMock()
+
+    canvas_widget = Canvas()
+    item = FurnitureItem(furniture_obj, parent=canvas_widget.canvas_area)
+    item.pixmap = dummy_qpixmap.copy()
+    item.original_pixmap = dummy_qpixmap.copy()
+    item.original_ratio = 1.0
+    item.setFixedSize(dummy_qpixmap.size())  # 100x100으로 시작
+    item.move(200, 200)
+    canvas_widget.select_furniture_item(item) 
+    item.show()
+    canvas_widget.furniture_items.append(item)
+    qtbot.addWidget(canvas_widget)
+
+    # 좌상단 핸들로 아이템을 최소 크기보다 작게 만들려고 시도
+    item.update_resize_handles()
+    top_left_handle = item.resize_handles[ResizeHandle.TOP_LEFT]
+    handle_click_pos = top_left_handle.center()
+
+    # 아이템을 매우 작게 만들려고 시도 (최소 크기보다 작게)
+    large_positive_drag = QPoint(80, 80)  # 오른쪽 아래로 80픽셀씩 (크기를 20x20으로 줄이려고 시도)
+
+    qtbot.mousePress(item, Qt.MouseButton.LeftButton, pos=handle_click_pos)
+    move_to_pos_in_item = handle_click_pos + large_positive_drag
+    qtbot.mouseMove(item, pos=move_to_pos_in_item, delay=-1)
+    qtbot.mouseRelease(item, Qt.MouseButton.LeftButton, pos=move_to_pos_in_item, delay=-1)
+
+    # 최소 크기 100x100이 유지되는지 확인
+    assert item.width() >= 100, f"너비가 최소 크기 미만: {item.width()}"
+    assert item.height() >= 100, f"높이가 최소 크기 미만: {item.height()}"

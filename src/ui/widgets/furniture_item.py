@@ -1,6 +1,7 @@
+from enum import Enum
 from typing import Union
 
-from PyQt6.QtCore import QRect, Qt, QTimer, QThread, pyqtSignal
+from PyQt6.QtCore import QRect, Qt, QTimer, QThread, pyqtSignal, QPoint
 from PyQt6.QtGui import (QColor, QGuiApplication, QPainter, QPen, QPixmap,
                          QTransform)
 from PyQt6.QtWidgets import (QDialog, QGroupBox, QHBoxLayout, QLabel, QMenu,
@@ -10,6 +11,18 @@ from src.models.furniture import Furniture
 from src.services.image_service import ImageService
 from src.services.supabase_client import SupabaseClient
 from src.ui.utils import ImageAdjuster, ImageProcessor
+
+
+class ResizeHandle(Enum):
+    """리사이즈 핸들 위치"""
+    TOP_LEFT = 0      # 좌상단
+    TOP = 1          # 상단 중앙
+    TOP_RIGHT = 2    # 우상단
+    LEFT = 3         # 좌측 중앙
+    RIGHT = 4        # 우측 중앙
+    BOTTOM_LEFT = 5  # 좌하단
+    BOTTOM = 6       # 하단 중앙
+    BOTTOM_RIGHT = 7 # 우하단
 
 
 class FurnitureItem(QWidget):
@@ -35,6 +48,25 @@ class FurnitureItem(QWidget):
         self.is_flipped: bool = False # 좌우 반전 상태
         self.maintain_aspect_ratio: bool = False # 현재 비율 유지 상태
         self.adjust_dialog = None # 이미지 조정 다이얼로그 참조
+
+        # 리사이즈 관련 속성 초기화 (load_image 호출 전에 설정)
+        self.setMouseTracking(True)
+        self.is_resizing = False
+        self.resize_handles = {}  # 리사이즈 핸들들을 저장할 딕셔너리
+        self.active_handle = None  # 현재 활성화된 핸들
+        self.handle_size = 8  # 핸들 크기
+        
+        # 드래그 관련 속성 초기화
+        self.old_pos = None
+        self.drag_start_pos = None  # 드래그 시작 시 위젯 위치
+        
+        # 이미지 조정 다이얼로그의 슬라이더 값 변경 디바운싱용 타이머
+        self.update_timer = QTimer(self)
+        self.update_timer.setSingleShot(True)
+        self.update_timer.setInterval(120)
+        self.update_timer.timeout.connect(self.apply_pending_update)
+        
+        self.is_selected = False
 
         # 이미지 로드 및 관련 속성 초기화
         loaded_original_candidate = self.load_image()
@@ -69,30 +101,55 @@ class FurnitureItem(QWidget):
         else: # self.pixmap이 로드되지 않은 극단적 경우
             self.setFixedSize(200,200)
         
-        self.setMouseTracking(True)
-        self.is_resizing = False
-        self.resize_handle = QRect() # resizeEvent에서 실제 값으로 업데이트됨
-        self.update_resize_handle() # 명시적 초기 호출
-        
-        # 드래그 관련 속성 초기화
-        self.old_pos = None
-        
-        # 이미지 조정 다이얼로그의 슬라이더 값 변경 디바운싱용 타이머
-        self.update_timer = QTimer(self)
-        self.update_timer.setSingleShot(True)
-        self.update_timer.setInterval(120)
-        self.update_timer.timeout.connect(self.apply_pending_update)
-        
-        self.is_selected = False
+        self.update_resize_handles() # 핸들 위치 업데이트
     
-    def update_resize_handle(self):
-        """크기가 변경될 때 리사이즈 핸들 위치를 업데이트합니다."""
-        self.resize_handle = QRect(self.width() - 20, self.height() - 20, 20, 20)
+    def update_resize_handles(self):
+        """모든 리사이즈 핸들의 위치를 업데이트합니다."""
+        w = self.width()
+        h = self.height()
+        s = self.handle_size
+        half_s = s // 2
+        
+        # 8개의 핸들 위치 설정
+        self.resize_handles = {
+            ResizeHandle.TOP_LEFT: QRect(0, 0, s, s),
+            ResizeHandle.TOP: QRect(w//2 - half_s, 0, s, s),
+            ResizeHandle.TOP_RIGHT: QRect(w - s, 0, s, s),
+            ResizeHandle.LEFT: QRect(0, h//2 - half_s, s, s),
+            ResizeHandle.RIGHT: QRect(w - s, h//2 - half_s, s, s),
+            ResizeHandle.BOTTOM_LEFT: QRect(0, h - s, s, s),
+            ResizeHandle.BOTTOM: QRect(w//2 - half_s, h - s, s, s),
+            ResizeHandle.BOTTOM_RIGHT: QRect(w - s, h - s, s, s),
+        }
+    
+    def get_resize_cursor(self, handle: ResizeHandle) -> Qt.CursorShape:
+        """핸들 위치에 따른 적절한 커서를 반환합니다."""
+        cursor_map = {
+            ResizeHandle.TOP_LEFT: Qt.CursorShape.SizeFDiagCursor,
+            ResizeHandle.TOP: Qt.CursorShape.SizeVerCursor,
+            ResizeHandle.TOP_RIGHT: Qt.CursorShape.SizeBDiagCursor,
+            ResizeHandle.LEFT: Qt.CursorShape.SizeHorCursor,
+            ResizeHandle.RIGHT: Qt.CursorShape.SizeHorCursor,
+            ResizeHandle.BOTTOM_LEFT: Qt.CursorShape.SizeBDiagCursor,
+            ResizeHandle.BOTTOM: Qt.CursorShape.SizeVerCursor,
+            ResizeHandle.BOTTOM_RIGHT: Qt.CursorShape.SizeFDiagCursor,
+        }
+        return cursor_map.get(handle, Qt.CursorShape.ArrowCursor)
+    
+    def get_handle_at_pos(self, pos: QPoint) -> Union[ResizeHandle, None]:
+        """주어진 위치에 있는 핸들을 반환합니다."""
+        if not self.is_selected:
+            return None
+        
+        for handle, rect in self.resize_handles.items():
+            if rect.contains(pos):
+                return handle
+        return None
     
     def resizeEvent(self, event):
         """위젯 크기가 변경될 때 리사이즈 핸들 위치를 자동으로 업데이트합니다."""
         super().resizeEvent(event)
-        self.update_resize_handle()
+        self.update_resize_handles()
     
     def load_image(self) -> Union[QPixmap, None]: # QPixmap | None -> Union[QPixmap, None]
         """가구 이미지를 Supabase에서 가져와 ImageService를 통해 로드합니다.
@@ -124,7 +181,6 @@ class FurnitureItem(QWidget):
         except Exception as e:
             print(f"이미지 로드 중 오류 발생 (데이터 다운로드/처리 중): {e}")
             self.pixmap = QPixmap(200, 200)
-            self.pixmap.fill(QColor("#f0f0f0"))
             painter = QPainter(self.pixmap)
             painter.setPen(QPen(QColor("#2C3E50")))
             painter.drawText(self.pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "이미지 로드 예외")
@@ -168,7 +224,7 @@ class FurnitureItem(QWidget):
             self.setFixedSize(200,200)
             self.original_ratio = 1.0
 
-        self.update_resize_handle()
+        self.update_resize_handles()
         return loaded_pixmap_for_original # 계산된 original_pixmap 후보를 반환
 
     def paintEvent(self, event):
@@ -204,12 +260,14 @@ class FurnitureItem(QWidget):
             painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
             
             # 리사이즈 핸들 그리기
-            painter.fillRect(self.resize_handle, QColor("#2C3E50"))
+            for handle, rect in self.resize_handles.items():
+                painter.fillRect(rect, QColor("#2C3E50"))
     
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            # old_pos는 항상 초기화
+            # 드래그 시작 시 위젯의 위치 저장
             self.old_pos = event.pos()
+            self.drag_start_pos = self.pos()  # 위젯의 시작 위치 저장
             
             # 캔버스 찾기
             canvas_area = self.parent()
@@ -219,108 +277,167 @@ class FurnitureItem(QWidget):
                     # 선택 처리를 Canvas 클래스로 위임
                     canvas.select_furniture_item(self)
             
-            if self.is_selected and self.resize_handle.contains(event.pos()):
+            # 핸들 확인
+            handle = self.get_handle_at_pos(event.pos())
+            if self.is_selected and handle:
                 self.is_resizing = True
+                self.active_handle = handle  # 활성화된 핸들 저장
                 self.original_size_on_resize = self.size() # 리사이즈 시작 시점의 크기 저장
+                self.original_pos_on_resize = self.pos()  # 리사이즈 시작 시점의 위치 저장
                 self.resize_mouse_start_pos = event.pos() # 리사이즈 시작 시점의 마우스 위치 저장
                 self.maintain_aspect_ratio_on_press = bool(QGuiApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
+                self.setCursor(self.get_resize_cursor(handle))  # 커서 변경
             else:
                 self.raise_()  # 위젯을 최상위로
             event.accept() # 이벤트 전파 중단
     
     def mouseMoveEvent(self, event):
-        if self.is_resizing:
+        # 리사이즈 중이 아닐 때 커서 업데이트
+        if not self.is_resizing and self.is_selected:
+            handle = self.get_handle_at_pos(event.pos())
+            if handle:
+                self.setCursor(self.get_resize_cursor(handle))
+            else:
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+        
+        if self.is_resizing and self.active_handle:
             # Shift 키 상태를 드래그 시작 시점 기준으로 설정
             self.maintain_aspect_ratio = self.maintain_aspect_ratio_on_press
             
             # 마우스 이동량 계산
             delta = event.pos() - self.resize_mouse_start_pos
             
-            # 새 크기 계산
-            new_width = self.original_size_on_resize.width() + delta.x()
-            new_height = self.original_size_on_resize.height() + delta.y()
+            # 핸들에 따른 크기와 위치 계산
+            new_x = self.original_pos_on_resize.x()
+            new_y = self.original_pos_on_resize.y()
+            new_width = self.original_size_on_resize.width()
+            new_height = self.original_size_on_resize.height()
+            
+            # 핸들별 리사이즈 로직
+            if self.active_handle in [ResizeHandle.TOP_LEFT, ResizeHandle.LEFT, ResizeHandle.BOTTOM_LEFT]:
+                # 왼쪽 변 이동
+                new_width -= delta.x()
+                new_x += delta.x()
+            
+            if self.active_handle in [ResizeHandle.TOP_RIGHT, ResizeHandle.RIGHT, ResizeHandle.BOTTOM_RIGHT]:
+                # 오른쪽 변 이동
+                new_width += delta.x()
+                
+            if self.active_handle in [ResizeHandle.TOP_LEFT, ResizeHandle.TOP, ResizeHandle.TOP_RIGHT]:
+                # 위쪽 변 이동
+                new_height -= delta.y()
+                new_y += delta.y()
+                
+            if self.active_handle in [ResizeHandle.BOTTOM_LEFT, ResizeHandle.BOTTOM, ResizeHandle.BOTTOM_RIGHT]:
+                # 아래쪽 변 이동
+                new_height += delta.y()
 
             # 최소 크기 제한
-            new_width = max(100, new_width)
-            new_height = max(100, new_height)
+            if new_width < 100:
+                new_width = 100
+                # 왼쪽 핸들인 경우 위치 조정
+                if self.active_handle in [ResizeHandle.TOP_LEFT, ResizeHandle.LEFT, ResizeHandle.BOTTOM_LEFT]:
+                    new_x = self.original_pos_on_resize.x() + self.original_size_on_resize.width() - 100
+                    
+            if new_height < 100:
+                new_height = 100
+                # 위쪽 핸들인 경우 위치 조정
+                if self.active_handle in [ResizeHandle.TOP_LEFT, ResizeHandle.TOP, ResizeHandle.TOP_RIGHT]:
+                    new_y = self.original_pos_on_resize.y() + self.original_size_on_resize.height() - 100
             
             # 캔버스 경계 체크
             canvas_area = self.parent()
-            canvas_max_width = None
-            canvas_max_height = None
-            
             if canvas_area and hasattr(canvas_area, 'rect'):
                 try:
                     canvas_rect = canvas_area.rect()
-                    current_pos = self.pos()
                     
-                    # 새 크기로 변경했을 때 캔버스를 벗어나는지 확인
-                    canvas_max_width = canvas_rect.width() - current_pos.x()
-                    canvas_max_height = canvas_rect.height() - current_pos.y()
+                    # 경계 체크 및 조정
+                    if new_x < 0:
+                        # 왼쪽 경계를 벗어나는 경우, 위치를 0으로 설정하고 너비를 조정
+                        adjustment = -new_x  # 얼마나 벗어났는지
+                        new_x = 0
+                        new_width -= adjustment  # 벗어난 만큼 너비 줄이기
+                        
+                    if new_y < 0:
+                        # 상단 경계를 벗어나는 경우, 위치를 0으로 설정하고 높이를 조정
+                        adjustment = -new_y  # 얼마나 벗어났는지
+                        new_y = 0
+                        new_height -= adjustment  # 벗어난 만큼 높이 줄이기
                     
-                    # 캔버스 경계에 맞게 크기 제한 
-                    if canvas_max_width > 0:
-                        new_width = min(new_width, canvas_max_width)
-                    if canvas_max_height > 0:
-                        new_height = min(new_height, canvas_max_height)
+                    if new_x + new_width > canvas_rect.width():
+                        new_width = canvas_rect.width() - new_x
+                    if new_y + new_height > canvas_rect.height():
+                        new_height = canvas_rect.height() - new_y
                         
                 except (AttributeError, TypeError):
                     # Mock 객체나 잘못된 객체인 경우 경계 체크 스킵
                     pass
 
-            print(f"[MouseMove 리사이즈] maintain_aspect_ratio: {self.maintain_aspect_ratio}, original_ratio: {self.original_ratio}, pre_new_width: {new_width}, pre_new_height: {new_height}") # 값 확인
+            # 비율 유지 모드
             if self.maintain_aspect_ratio and self.original_ratio > 0:
-                # 비율 유지 로직
-                # new_width 와 new_height는 마우스 이동에 따라 계산된 값
-                
-                # 너비 변경에 따른 기대 높이
-                expected_height_from_width = int(new_width / self.original_ratio)
-                # 높이 변경에 따른 기대 너비
-                expected_width_from_height = int(new_height * self.original_ratio)
-                
-                # 너비 변경폭 vs 높이 변경폭
-                delta_w_abs = abs(new_width - self.original_size_on_resize.width())
-                delta_h_abs = abs(new_height - self.original_size_on_resize.height())
-
-                if delta_w_abs >= delta_h_abs: # 너비 변경이 크거나 같으면 너비 기준으로 높이 조정
-                    new_height = expected_height_from_width
-                else: # 높이 변경이 크면 높이 기준으로 너비 조정
-                    new_width = expected_width_from_height
-                
-                # 비율 유지 후 다시 경계 체크
-                if canvas_area and hasattr(canvas_area, 'rect'):
-                    try:
-                        canvas_rect = canvas_area.rect()
-                        current_pos = self.pos()
-                        
-                        canvas_max_width = canvas_rect.width() - current_pos.x()
-                        canvas_max_height = canvas_rect.height() - current_pos.y()
-                        
-                        # 경계를 벗어나면 비율을 유지하면서 크기 조정
-                        if canvas_max_width > 0 and new_width > canvas_max_width:
-                            new_width = canvas_max_width
-                            new_height = int(new_width / self.original_ratio)
-                        if canvas_max_height > 0 and new_height > canvas_max_height:
-                            new_height = canvas_max_height
-                            new_width = int(new_height * self.original_ratio)
+                # 모서리 핸들의 경우만 비율 유지
+                if self.active_handle in [ResizeHandle.TOP_LEFT, ResizeHandle.TOP_RIGHT, 
+                                        ResizeHandle.BOTTOM_LEFT, ResizeHandle.BOTTOM_RIGHT]:
+                    # 더 큰 변화량을 기준으로 비율 조정
+                    delta_w = abs(new_width - self.original_size_on_resize.width())
+                    delta_h = abs(new_height - self.original_size_on_resize.height())
+                    
+                    if delta_w >= delta_h:
+                        # 너비 기준으로 높이 조정
+                        new_height = int(new_width / self.original_ratio)
+                        # 핸들에 따른 위치 조정
+                        if self.active_handle in [ResizeHandle.TOP_LEFT, ResizeHandle.TOP_RIGHT]:
+                            new_y = self.original_pos_on_resize.y() + self.original_size_on_resize.height() - new_height
+                    else:
+                        # 높이 기준으로 너비 조정
+                        new_width = int(new_height * self.original_ratio)
+                        # 핸들에 따른 위치 조정
+                        if self.active_handle in [ResizeHandle.TOP_LEFT, ResizeHandle.BOTTOM_LEFT]:
+                            new_x = self.original_pos_on_resize.x() + self.original_size_on_resize.width() - new_width
+                    
+                    # 비율 유지 후 다시 경계 체크
+                    if canvas_area and hasattr(canvas_area, 'rect'):
+                        try:
+                            canvas_rect = canvas_area.rect()
                             
-                    except (AttributeError, TypeError):
-                        pass
+                            # 경계를 벗어나면 비율을 유지하면서 크기 조정
+                            if new_x < 0:
+                                # 왼쪽 경계를 벗어나는 경우
+                                adjustment = -new_x
+                                new_x = 0
+                                new_width -= adjustment
+                                new_height = int(new_width / self.original_ratio)
+                                if self.active_handle in [ResizeHandle.TOP_LEFT, ResizeHandle.TOP_RIGHT]:
+                                    new_y = self.original_pos_on_resize.y() + self.original_size_on_resize.height() - new_height
+                            
+                            if new_y < 0:
+                                # 상단 경계를 벗어나는 경우
+                                adjustment = -new_y
+                                new_y = 0
+                                new_height -= adjustment
+                                new_width = int(new_height * self.original_ratio)
+                                if self.active_handle in [ResizeHandle.TOP_LEFT, ResizeHandle.BOTTOM_LEFT]:
+                                    new_x = self.original_pos_on_resize.x() + self.original_size_on_resize.width() - new_width
+                            
+                            if new_x + new_width > canvas_rect.width():
+                                new_width = canvas_rect.width() - new_x
+                                new_height = int(new_width / self.original_ratio)
+                                if self.active_handle in [ResizeHandle.TOP_RIGHT, ResizeHandle.TOP_LEFT]:
+                                    new_y = self.original_pos_on_resize.y() + self.original_size_on_resize.height() - new_height
+                            
+                            if new_y + new_height > canvas_rect.height():
+                                new_height = canvas_rect.height() - new_y
+                                new_width = int(new_height * self.original_ratio)
+                                if self.active_handle in [ResizeHandle.BOTTOM_LEFT, ResizeHandle.TOP_LEFT]:
+                                    new_x = self.original_pos_on_resize.x() + self.original_size_on_resize.width() - new_width
+                                
+                        except (AttributeError, TypeError):
+                            pass
             
-            # 최종 최소 크기 재확인 (단, 캔버스 경계를 우선시함)
-            # 캔버스 경계가 최소 크기보다 작다면 경계를 우선
-            if canvas_max_width is not None and canvas_max_width > 0:
-                new_width = min(max(new_width, min(100, canvas_max_width)), canvas_max_width)
-            else:
-                new_width = max(100, new_width)
-                
-            if canvas_max_height is not None and canvas_max_height > 0:
-                new_height = min(max(new_height, min(100, canvas_max_height)), canvas_max_height)
-            else:
-                new_height = max(100, new_height)
-            
+            # 최종 크기와 위치 적용
+            self.move(new_x, new_y)
             self.setFixedSize(new_width, new_height)
-            self.update_resize_handle()
+            self.update_resize_handles()
         elif event.buttons() & Qt.MouseButton.LeftButton:
             # 컨트롤 키를 누른 상태에서는 드래그 이동을 방지
             modifiers = QGuiApplication.keyboardModifiers()
@@ -336,7 +453,6 @@ class FurnitureItem(QWidget):
                 if canvas_area:
                     canvas = canvas_area.parent()
                     if canvas and hasattr(canvas, 'selected_items'):
-                        # 다중 선택된 모든 아이템을 함께 이동 (경계 체크 포함)
                         self._move_items_with_bounds_check(canvas.selected_items, delta, canvas_area)
                     else:
                         # Canvas를 찾을 수 없는 경우 현재 아이템만 이동
@@ -389,12 +505,15 @@ class FurnitureItem(QWidget):
     
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.is_resizing = False
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            if self.old_pos is not None and self.old_pos != self.pos(): # 위치가 변경된 경우
-                print(f"{self.furniture.name} moved to {self.pos()}")
+            if self.is_resizing:
+                self.is_resizing = False
+                self.active_handle = None  # 활성 핸들 초기화
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+                self.item_changed.emit() # 크기 변경 완료 시 시그널 발생
+            elif self.drag_start_pos is not None and self.drag_start_pos != self.pos(): # 위치가 변경된 경우
                 self.item_changed.emit() # 위치 변경 완료 시 시그널 발생
             self.old_pos = None # 드래그 완료 후 초기화
+            self.drag_start_pos = None  # 드래그 시작 위치 초기화
         super().mouseReleaseEvent(event)
 
     def contextMenuEvent(self, event):
@@ -794,8 +913,6 @@ class FurnitureItem(QWidget):
             self.processor.start(QThread.Priority.LowPriority)
             
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             print(f"[이미지 조정] 미리보기 업데이트 중 오류 발생: {e}")
 
     def update_processed_image_and_unlock(self, processed_pixmap):
@@ -853,8 +970,6 @@ class FurnitureItem(QWidget):
             self.final_processor.start()
             
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             print(f"[이미지 조정] 적용 중 오류 발생: {e}")
             self.is_processing = False
             
@@ -912,8 +1027,6 @@ class FurnitureItem(QWidget):
                 self.adjust_dialog.reject()
                 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             print(f"[이미지 조정] 취소 중 오류 발생: {e}")
 
     def stop_all_threads(self):
@@ -1052,8 +1165,6 @@ class FurnitureItem(QWidget):
             print(f"[FurnitureItem] 리소스 정리 완료: {self.furniture.name}")
             
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             print(f"[FurnitureItem] 리소스 정리 중 오류: {e}")
         finally:
             # 부모 클래스의 deleteLater 호출

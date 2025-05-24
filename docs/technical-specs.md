@@ -65,7 +65,33 @@ class CollageFurnitureState:
     saturation: float = 100.0         # 0-200%
 ```
 
-### 4.3 캔버스 상태 (CanvasState)
+### 4.3 가구 아이템 UI 기능
+
+#### 리사이즈 핸들
+가구 아이템의 크기 조절을 위한 핸들 시스템:
+
+```python
+# 리사이즈 핸들 위치 (8방향)
+class ResizeHandle(Enum):
+    TOP_LEFT = 0      # 좌상단
+    TOP = 1          # 상단 중앙
+    TOP_RIGHT = 2    # 우상단
+    LEFT = 3         # 좌측 중앙
+    RIGHT = 4        # 우측 중앙
+    BOTTOM_LEFT = 5  # 좌하단
+    BOTTOM = 6       # 하단 중앙
+    BOTTOM_RIGHT = 7 # 우하단
+```
+
+**기능 사양:**
+- 8방향 리사이즈 핸들 제공 (모서리 4개, 변 중앙 4개)
+- 핸들 크기: 8x8 픽셀
+- 핸들 색상: #2C3E50 (선택 시에만 표시)
+- Shift 키 홀드: 비율 유지 리사이즈
+- 최소 크기 제한: 100x100 픽셀
+- 캔버스 경계 제한: 리사이즈 시 캔버스 영역을 벗어나지 않도록 제한
+
+### 4.4 캔버스 상태 (CanvasState)
 ```python
 @dataclass
 class CanvasState:
@@ -86,7 +112,7 @@ class CanvasState:
     version: str = '1.0'
 ```
 
-### 4.4 애플리케이션 상태 (AppState)
+### 4.5 애플리케이션 상태 (AppState)
 ```python
 @dataclass
 class AppState:
