@@ -4,7 +4,7 @@ import json
 import os
 
 from PyQt6.QtCore import (QPoint, QRect, Qt, QTimer, QByteArray, QBuffer, QIODevice, QSize)
-from PyQt6.QtGui import (QPainter, QPixmap, QTransform, QGuiApplication)
+from PyQt6.QtGui import (QPainter, QPixmap, QTransform, QGuiApplication, QPen, QBrush, QColor)
 from PyQt6.QtWidgets import (QFileDialog,
                              QMenu,
                              QMessageBox, QVBoxLayout,
@@ -802,9 +802,54 @@ class Canvas(QWidget):
                 Qt.TransformationMode.SmoothTransformation
             ))
         
+        # 번호표 그리기 (CanvasArea의 메서드 활용)
+        self._draw_number_labels_on_image(painter)
+        
         painter.end()
         return image
     
+    def _draw_number_labels_on_image(self, painter):
+        """이미지 내보내기용 번호표를 그립니다. (CanvasArea의 로직과 동일)"""
+        # 번호표 설정
+        label_size = 18  # 원형 라벨 크기
+        offset = 1       # 가구 영역에서 벗어날 거리
+        
+        for furniture_item in self.furniture_items:
+            # 번호 확인
+            if not hasattr(furniture_item, 'number_label_value') or furniture_item.number_label_value <= 0:
+                continue
+            
+            if not hasattr(furniture_item, 'show_number_label') or not furniture_item.show_number_label:
+                continue
+            
+            # 가구 아이템의 위치와 크기
+            item_rect = furniture_item.geometry()
+            
+            # 번호표 위치 (가구 영역 밖 좌측 상단)
+            label_x = item_rect.left() - label_size - offset
+            label_y = item_rect.top() - label_size - offset
+            
+            # 캔버스 영역을 벗어나지 않도록 조정
+            if label_x < 0:
+                label_x = item_rect.left() + offset  # 가구 안쪽으로
+            if label_y < 0:
+                label_y = item_rect.top() + offset  # 가구 안쪽으로
+            
+            label_rect = QRect(label_x, label_y, label_size, label_size)
+            
+            # 원형 배경 그리기
+            painter.setPen(QPen(QColor("#ffffff"), 2))  # 흰색 테두리
+            painter.setBrush(QBrush(QColor("#444444")))  # 다크 그레이 배경
+            painter.drawEllipse(label_rect)
+            
+            # 숫자 텍스트 그리기
+            painter.setPen(QPen(QColor("#ffffff")))  # 흰색 텍스트
+            font = painter.font()
+            font.setBold(True)
+            font.setPointSize(8)  # 폰트 크기
+            painter.setFont(font)
+            painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, str(furniture_item.number_label_value))
+
     def dragEnterEvent(self, event):
         """드래그 진입 이벤트를 처리합니다."""
         if event.mimeData().hasFormat("application/x-furniture"):

@@ -292,12 +292,45 @@ class PdfExportService(QObject):
             image_data = self._get_collage_image_data(canvas_widget)
             if image_data:
                 try:
-                    # BytesIO를 사용해서 메모리에서 직접 이미지 처리
-                    img = Image(image_data, width=170*mm, height=120*mm)
+                    # Canvas에서 원본 이미지 크기 가져오기
+                    original_pixmap = canvas_widget._generate_collage_image()
+                    original_width = original_pixmap.width()
+                    original_height = original_pixmap.height()
+                    
+                    # PDF 페이지 크기 계산 (A4 기준, 양쪽 여백 40mm 제외)
+                    page_width = A4[0] - 40*mm  # 210mm - 40mm = 170mm
+                    page_height = A4[1] - 40*mm  # 297mm - 40mm = 257mm
+                    
+                    # 원본 이미지 비율 계산
+                    aspect_ratio = original_width / original_height
+                    
+                    # 너비를 최대한 활용하면서 비율 유지
+                    image_width = page_width
+                    image_height = image_width / aspect_ratio
+                    
+                    # 높이가 페이지를 벗어나면 높이 기준으로 조정
+                    max_image_height = page_height * 0.6  # 페이지 높이의 60%까지만 사용
+                    if image_height > max_image_height:
+                        image_height = max_image_height
+                        image_width = image_height * aspect_ratio
+                    
+                    print(f"[PDF] 원본 이미지 크기: {original_width}x{original_height}")
+                    print(f"[PDF] PDF 이미지 크기: {image_width/mm:.1f}mm x {image_height/mm:.1f}mm")
+                    print(f"[PDF] 비율 유지: {aspect_ratio:.2f}")
+                    
+                    # BytesIO를 사용해서 메모리에서 직접 이미지 처리 (비율 유지)
+                    img = Image(image_data, width=image_width, height=image_height)
                     story.append(img)
                     story.append(Spacer(1, 20))
                 except Exception as e:
                     print(f"이미지 추가 오류: {e}")
+                    # 실패 시 기본 크기로 fallback
+                    try:
+                        img = Image(image_data, width=170*mm, height=120*mm)
+                        story.append(img)
+                        story.append(Spacer(1, 20))
+                    except Exception as fallback_e:
+                        print(f"이미지 fallback 오류: {fallback_e}")
             
             # 각 가구를 개별 섹션으로 표시
             for i, item in enumerate(furniture_items, 1):
