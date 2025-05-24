@@ -11,7 +11,9 @@ a = Analysis(
     ['src/main.py'],
     pathex=['src'],  # src 디렉토리를 검색 경로에 추가
     binaries=[],
-    datas=[],
+    datas=[
+        ('src/assets/fonts/*.ttf', 'assets/fonts/'),  # 모든 ttf 폰트 파일들을 빌드에 포함 (나눔고딕, 나눔 스퀘어)
+    ],
     hiddenimports=[
         'PyQt6',
         'PyQt6.QtCore',
@@ -29,6 +31,7 @@ a = Analysis(
         'services',
         'services.image_service',
         'services.supabase_client',
+        'reportlab',  # reportlab 모듈 추가
     ],
     hookspath=[],
     hooksconfig={},

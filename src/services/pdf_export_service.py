@@ -1,12 +1,12 @@
 import os
+import sys
 from datetime import datetime
-from typing import List
 from io import BytesIO
+from typing import List
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
-from src.models.furniture import Furniture
 from src.ui.canvas import FurnitureItem
 
 try:
@@ -45,16 +45,88 @@ class PdfExportService(QObject):
             return
             
         try:
-            # Windows 시스템 폰트 경로들
-            font_paths = [
+            # 프로젝트 내부 폰트 경로 (우선 순위 1)
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            # 개발 환경에서의 폰트 경로
+            dev_font_dir = os.path.join(current_dir, '..', 'assets', 'fonts')
+            
+            # PyInstaller 빌드 환경에서의 폰트 경로
+            if getattr(sys, 'frozen', False):
+                # PyInstaller로 빌드된 경우
+                bundle_dir = sys._MEIPASS
+                build_font_dir = os.path.join(bundle_dir, 'assets', 'fonts')
+            else:
+                build_font_dir = dev_font_dir
+            
+            # 폰트 경로 목록 (우선 순위대로)
+            font_dirs = [build_font_dir, dev_font_dir]
+            
+            project_font_paths = []
+            for font_dir in font_dirs:
+                if os.path.exists(font_dir):
+                    # macOS에서 띄어쓰기 문제 해결을 위해 나눔고딕코딩을 우선 사용 (고정폭 폰트)
+                    project_font_paths.extend([
+                        (os.path.join(font_dir, "NanumGothicCoding.ttf"), "나눔고딕코딩 Regular"),
+                        (os.path.join(font_dir, "NanumGothicCoding-Bold.ttf"), "나눔고딕코딩 Bold"),
+                        (os.path.join(font_dir, "NanumSquareR.ttf"), "나눔 스퀘어 Regular"),
+                        (os.path.join(font_dir, "NanumSquareB.ttf"), "나눔 스퀘어 Bold"),
+                    ])
+                    break  # 첫 번째로 찾은 디렉토리 사용
+            
+            # 프로젝트 내부 폰트 시도
+            for font_path, font_name in project_font_paths:
+                if os.path.exists(font_path):
+                    try:
+                        # 나눔고딕코딩 Regular 폰트 등록 (우선순위 1 - 띄어쓰기 문제 해결)
+                        if "나눔고딕코딩 Regular" in font_name:
+                            pdfmetrics.registerFont(TTFont('NanumGothicCoding', font_path))
+                            self.korean_font_name = 'NanumGothicCoding'
+                            print(f"한글 폰트 등록 성공: {font_name} ({font_path})")
+                        # 나눔고딕코딩 Bold 폰트 등록
+                        elif "나눔고딕코딩 Bold" in font_name:
+                            pdfmetrics.registerFont(TTFont('NanumGothicCoding-Bold', font_path))
+                            self.korean_font_bold = 'NanumGothicCoding-Bold'
+                            print(f"한글 폰트 등록 성공: {font_name} ({font_path})")
+                        # 나눔 스퀘어 Regular 폰트 등록 (백업용)
+                        elif "나눔 스퀘어 Regular" in font_name and self.korean_font_name == 'Helvetica':
+                            pdfmetrics.registerFont(TTFont('NanumSquare', font_path))
+                            self.korean_font_name = 'NanumSquare'
+                            print(f"한글 폰트 등록 성공: {font_name} ({font_path})")
+                        # 나눔 스퀘어 Bold 폰트 등록 (백업용)
+                        elif "나눔 스퀘어 Bold" in font_name and self.korean_font_bold == 'Helvetica-Bold':
+                            pdfmetrics.registerFont(TTFont('NanumSquare-Bold', font_path))
+                            self.korean_font_bold = 'NanumSquare-Bold'
+                            print(f"한글 폰트 등록 성공: {font_name} ({font_path})")
+                    except Exception as e:
+                        print(f"폰트 등록 실패 {font_name}: {e}")
+                        continue
+            
+            # 프로젝트 폰트가 성공적으로 등록되었는지 확인
+            if self.korean_font_name in ['NanumGothicCoding', 'NanumSquare']:
+                print(f"{self.korean_font_name} 폰트가 성공적으로 등록되었습니다.")
+                return
+            
+            # macOS 시스템 폰트 경로들 (우선 순위 2)
+            macos_font_paths = [
+                ("/Library/Fonts/NanumGothicCoding.ttf", "나눔고딕코딩"),
+                ("/System/Library/Fonts/AppleSDGothicNeo.ttc", "애플 SD 고딕 Neo"),
+                ("/Library/Fonts/NanumSquareOTF.otf", "나눔 스퀘어"),
+                ("/System/Library/Fonts/Helvetica.ttc", "Helvetica"),
+            ]
+            
+            # Windows 시스템 폰트 경로들 (우선 순위 3)
+            windows_font_paths = [
                 (r"C:\Windows\Fonts\malgun.ttf", "맑은 고딕"),      # 맑은 고딕
                 (r"C:\Windows\Fonts\gulim.ttc", "굴림"),           # 굴림  
                 (r"C:\Windows\Fonts\batang.ttc", "바탕"),          # 바탕
                 (r"C:\Windows\Fonts\dotum.ttc", "돋움"),           # 돋움
             ]
             
-            # 사용 가능한 첫 번째 폰트 등록
-            for font_path, font_name in font_paths:
+            # 시스템 폰트 시도 (macOS 우선)
+            all_system_fonts = macos_font_paths + windows_font_paths
+            
+            for font_path, font_name in all_system_fonts:
                 if os.path.exists(font_path):
                     try:
                         pdfmetrics.registerFont(TTFont('KoreanFont', font_path))
