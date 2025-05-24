@@ -1072,7 +1072,7 @@ class Canvas(QWidget):
             
             # 캔버스 크기를 배경 이미지 크기에 맞춰 조정
             self.canvas_area.resize(width, height)
-            self.canvas_area.setMinimumSize(width, height) # 배경 크기가 최소 크기가 됨
+            # self.canvas_area.setMinimumSize(width, height) # 이 라인 제거 또는 주석 처리
             
             # 캔버스 영역 다시 그리기
             self.canvas_area.update()
