@@ -3,9 +3,11 @@
 선택된 가구를 표시하고 관리하는 BottomPanel과 SelectedFurniturePanel 클래스를 포함합니다.
 """
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QTableView, QVBoxLayout, QWidget, QSizePolicy
 import webbrowser
+
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import (QFrame, QTableView, QVBoxLayout, QWidget, QSizePolicy,
+                             QHBoxLayout, QPushButton, QMenu)
 
 from .common import SelectedFurnitureTableModel
 
@@ -38,8 +40,15 @@ class SelectedFurniturePanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(5)
 
+        # 순서 변경 버튼 영역 추가
+        self.create_order_control_section(layout)
+
         # 선택된 가구 테이블
         self.selected_model = SelectedFurnitureTableModel()
+        
+        # 모델에 컬럼 너비 복원 콜백 설정
+        self.selected_model.set_column_width_callback(self.setup_column_widths)
+        
         self.selected_table = QTableView()
         self.selected_table.setModel(self.selected_model)
         self.selected_table.setStyleSheet("""
@@ -83,9 +92,17 @@ class SelectedFurniturePanel(QWidget):
         # 테이블 편집 방지
         self.selected_table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
 
+        # 드래그 앤 드롭 활성화
+        self.selected_table.setDragDropMode(QTableView.DragDropMode.InternalMove)
+        self.selected_table.setDragDropOverwriteMode(False)
+        self.selected_table.setDefaultDropAction(Qt.DropAction.MoveAction)
+
         # 컬럼 너비 변경 감지 시그널 연결
         header = self.selected_table.horizontalHeader()
         header.sectionResized.connect(self.on_column_resized)
+
+        # 테이블 선택 변경 시그널 연결
+        self.selected_table.selectionModel().selectionChanged.connect(self.on_selection_changed)
 
         # 초기 컬럼 너비 설정
         self.setup_column_widths()
@@ -107,6 +124,205 @@ class SelectedFurniturePanel(QWidget):
         self.create_summary_section(layout)
 
         print("[선택된 가구 패널] 초기화 완료")
+
+    def create_order_control_section(self, layout):
+        """순서 변경 컨트롤 영역을 생성합니다."""
+        # 버튼 영역 컨테이너
+        control_widget = QWidget()
+        control_widget.setFixedHeight(40)  # 고정 높이
+        control_widget.setStyleSheet("""
+            QWidget {
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                margin: 2px 0;
+            }
+        """)
+        
+        control_layout = QHBoxLayout(control_widget)
+        control_layout.setContentsMargins(10, 5, 10, 5)
+        control_layout.setSpacing(10)
+
+        # 순서 변경 라벨
+        from PyQt6.QtWidgets import QLabel
+        order_label = QLabel("순서 변경:")
+        order_label.setStyleSheet("""
+            QLabel {
+                font-weight: bold;
+                color: #495057;
+                border: none;
+                background: none;
+            }
+        """)
+        control_layout.addWidget(order_label)
+
+        # 위로 이동 버튼
+        self.move_up_btn = QPushButton("▲ 위로")
+        self.move_up_btn.setFixedSize(80, 25)
+        self.move_up_btn.setEnabled(False)
+        self.move_up_btn.clicked.connect(self.move_selected_up)
+        self.move_up_btn.setStyleSheet(self.get_button_style())
+        control_layout.addWidget(self.move_up_btn)
+
+        # 아래로 이동 버튼
+        self.move_down_btn = QPushButton("▼ 아래로")
+        self.move_down_btn.setFixedSize(80, 25)
+        self.move_down_btn.setEnabled(False)
+        self.move_down_btn.clicked.connect(self.move_selected_down)
+        self.move_down_btn.setStyleSheet(self.get_button_style())
+        control_layout.addWidget(self.move_down_btn)
+
+        # 맨 위로 이동 버튼
+        self.move_top_btn = QPushButton("⬆ 맨 위로")
+        self.move_top_btn.setFixedSize(80, 25)
+        self.move_top_btn.setEnabled(False)
+        self.move_top_btn.clicked.connect(self.move_selected_to_top)
+        self.move_top_btn.setStyleSheet(self.get_button_style())
+        control_layout.addWidget(self.move_top_btn)
+
+        # 맨 아래로 이동 버튼
+        self.move_bottom_btn = QPushButton("⬇ 맨 아래로")
+        self.move_bottom_btn.setFixedSize(80, 25)
+        self.move_bottom_btn.setEnabled(False)
+        self.move_bottom_btn.clicked.connect(self.move_selected_to_bottom)
+        self.move_bottom_btn.setStyleSheet(self.get_button_style())
+        control_layout.addWidget(self.move_bottom_btn)
+
+        # 정렬 버튼
+        self.sort_btn = QPushButton("🔄 정렬")
+        self.sort_btn.setFixedSize(60, 25)
+        self.sort_btn.clicked.connect(self.show_sort_menu)
+        self.sort_btn.setStyleSheet(self.get_button_style())
+        control_layout.addWidget(self.sort_btn)
+
+        # 스페이서 추가
+        control_layout.addStretch()
+
+        # 컨트롤 영역을 고정 크기로 추가
+        layout.addWidget(control_widget, 0)
+
+    def get_button_style(self):
+        """버튼 스타일을 반환합니다."""
+        return """
+            QPushButton {
+                background-color: #007bff;
+                border: 1px solid #007bff;
+                color: white;
+                border-radius: 3px;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 2px 8px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+                border-color: #0056b3;
+            }
+            QPushButton:pressed {
+                background-color: #004085;
+                border-color: #004085;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+                border-color: #6c757d;
+                color: #ffffff;
+            }
+        """
+
+    def on_selection_changed(self):
+        """테이블 선택이 변경될 때 버튼 상태를 업데이트합니다."""
+        current_row = self.get_selected_row()
+        has_selection = current_row >= 0
+        row_count = self.selected_model.rowCount()
+
+        # 버튼 활성화/비활성화
+        self.move_up_btn.setEnabled(has_selection and current_row > 0)
+        self.move_down_btn.setEnabled(has_selection and current_row < row_count - 1)
+        self.move_top_btn.setEnabled(has_selection and current_row > 0)
+        self.move_bottom_btn.setEnabled(has_selection and current_row < row_count - 1)
+
+    def get_selected_row(self):
+        """현재 선택된 행 번호를 반환합니다."""
+        selection = self.selected_table.selectionModel().selectedRows()
+        if selection:
+            return selection[0].row()
+        return -1
+
+    def get_selected_furniture_name(self):
+        """현재 선택된 가구의 이름을 반환합니다."""
+        row = self.get_selected_row()
+        if row >= 0:
+            return self.selected_model.get_furniture_name_at_row(row)
+        return None
+
+    def move_selected_up(self):
+        """선택된 가구를 위로 이동합니다."""
+        furniture_name = self.get_selected_furniture_name()
+        if furniture_name:
+            new_row = self.selected_model.move_furniture_up(furniture_name)
+            if new_row >= 0:
+                # 모델 업데이트 완료 후 선택 복원 (약간의 지연을 두어 모델 업데이트 완료 대기)
+                QTimer.singleShot(0, lambda: self.select_row(new_row))
+
+    def move_selected_down(self):
+        """선택된 가구를 아래로 이동합니다."""
+        furniture_name = self.get_selected_furniture_name()
+        if furniture_name:
+            new_row = self.selected_model.move_furniture_down(furniture_name)
+            if new_row >= 0:
+                QTimer.singleShot(0, lambda: self.select_row(new_row))
+
+    def move_selected_to_top(self):
+        """선택된 가구를 맨 위로 이동합니다."""
+        furniture_name = self.get_selected_furniture_name()
+        if furniture_name:
+            new_row = self.selected_model.move_furniture_to_top(furniture_name)
+            if new_row >= 0:
+                QTimer.singleShot(0, lambda: self.select_row(new_row))
+
+    def move_selected_to_bottom(self):
+        """선택된 가구를 맨 아래로 이동합니다."""
+        furniture_name = self.get_selected_furniture_name()
+        if furniture_name:
+            new_row = self.selected_model.move_furniture_to_bottom(furniture_name)
+            if new_row >= 0:
+                QTimer.singleShot(0, lambda: self.select_row(new_row))
+
+    def show_sort_menu(self):
+        """정렬 옵션 메뉴를 표시합니다."""
+        menu = QMenu(self)
+        
+        # 정렬 옵션들
+        sort_options = [
+            ("이름 (가나다순)", "name", True),
+            ("이름 (가나다 역순)", "name", False),
+            ("브랜드 (가나다순)", "brand", True),
+            ("브랜드 (가나다 역순)", "brand", False),
+            ("가격 (낮은순)", "price", True),
+            ("가격 (높은순)", "price", False),
+            ("타입 (가나다순)", "type", True),
+            ("타입 (가나다 역순)", "type", False),
+        ]
+        
+        for text, sort_by, ascending in sort_options:
+            action = menu.addAction(text)
+            action.triggered.connect(lambda checked, sb=sort_by, asc=ascending: self.sort_furniture(sb, asc))
+        
+        # 버튼 위치에서 메뉴 표시
+        menu.exec(self.sort_btn.mapToGlobal(self.sort_btn.rect().bottomLeft()))
+
+    def sort_furniture(self, sort_by: str, ascending: bool):
+        """가구를 정렬합니다."""
+        self.selected_model.sort_furniture(sort_by, ascending)
+        # 정렬 후 첫 번째 행 선택 (약간의 지연을 두어 모델 업데이트 완료 대기)
+        if self.selected_model.rowCount() > 0:
+            QTimer.singleShot(0, lambda: self.select_row(0))
+
+    def select_row(self, row: int):
+        """지정된 행을 선택합니다."""
+        if 0 <= row < self.selected_model.rowCount():
+            index = self.selected_model.index(row, 0)
+            self.selected_table.selectRow(row)
+            self.selected_table.scrollTo(index)
 
     def create_summary_section(self, layout):
         """총계 표시 영역을 생성합니다."""

@@ -436,7 +436,7 @@ def test_selected_furniture_table_model():
     assert model.item(0, 8).text() == "45mm"        # 좌석높이
     assert model.item(0, 9).text() == "Test Description"  # 설명
     assert model.item(0, 10).text() == "http://example.com"  # 링크
-    assert model.item(0, 11).text() == "TestAuthor" # 작성자
+    assert model.item(0, 11).text() == "TestAuthor"
     assert model.item(0, 12).text() == "1"          # 개수
     
     # 같은 가구 다시 추가 (개수 증가 확인)
@@ -467,4 +467,203 @@ def test_selected_furniture_table_model():
     model.clear_furniture()
     assert model.rowCount() == 0
     assert model.get_total_count() == 0
-    assert model.get_total_price() == 0 
+    assert model.get_total_price() == 0
+
+
+def test_selected_furniture_order_management():
+    """가구 순서 변경 기능을 테스트합니다."""
+    model = SelectedFurnitureTableModel()
+    
+    # 테스트 가구들 생성
+    chair = Furniture(
+        id='1', brand='TestBrand', name='Chair', image_filename='chair.png', price=100,
+        type='Chair', description='Test Chair', link='', color='Brown', 
+        locations=['Living Room'], styles=['Modern'], width=60, depth=50, height=80
+    )
+    
+    table = Furniture(
+        id='2', brand='TestBrand', name='Table', image_filename='table.png', price=200,
+        type='Table', description='Test Table', link='', color='White', 
+        locations=['Dining Room'], styles=['Modern'], width=120, depth=80, height=75
+    )
+    
+    sofa = Furniture(
+        id='3', brand='TestBrand', name='Sofa', image_filename='sofa.png', price=300,
+        type='Sofa', description='Test Sofa', link='', color='Gray', 
+        locations=['Living Room'], styles=['Modern'], width=200, depth=100, height=80
+    )
+    
+    # 가구 추가
+    model.add_furniture(chair)
+    model.add_furniture(table)
+    model.add_furniture(sofa)
+    
+    # 초기 순서 확인 (추가 순서대로)
+    assert model.get_furniture_name_at_row(0) == "Chair"
+    assert model.get_furniture_name_at_row(1) == "Table"
+    assert model.get_furniture_name_at_row(2) == "Sofa"
+    
+    # 테이블을 위로 이동 (1 -> 0)
+    new_row = model.move_furniture_up("Table")
+    assert new_row == 0
+    assert model.get_furniture_name_at_row(0) == "Table"
+    assert model.get_furniture_name_at_row(1) == "Chair"
+    assert model.get_furniture_name_at_row(2) == "Sofa"
+    
+    # 소파를 아래로 이동 (2 -> 2, 이미 맨 아래이므로 변화 없음)
+    new_row = model.move_furniture_down("Sofa")
+    assert new_row == -1  # 이동 불가
+    
+    # 소파를 맨 위로 이동
+    new_row = model.move_furniture_to_top("Sofa")
+    assert new_row == 0
+    assert model.get_furniture_name_at_row(0) == "Sofa"
+    assert model.get_furniture_name_at_row(1) == "Table"
+    assert model.get_furniture_name_at_row(2) == "Chair"
+    
+    # 테이블을 맨 아래로 이동
+    new_row = model.move_furniture_to_bottom("Table")
+    assert new_row == 2
+    assert model.get_furniture_name_at_row(0) == "Sofa"
+    assert model.get_furniture_name_at_row(1) == "Chair"
+    assert model.get_furniture_name_at_row(2) == "Table"
+    
+    # 소파를 특정 위치로 이동 (0 -> 1)
+    success = model.move_furniture_to_position("Sofa", 1)
+    assert success == True
+    assert model.get_furniture_name_at_row(0) == "Chair"
+    assert model.get_furniture_name_at_row(1) == "Sofa"
+    assert model.get_furniture_name_at_row(2) == "Table"
+
+
+def test_selected_furniture_sorting():
+    """가구 정렬 기능을 테스트합니다."""
+    model = SelectedFurnitureTableModel()
+    
+    # 테스트 가구들 생성 (의도적으로 순서를 섞어서)
+    furniture_data = [
+        ("Zebra Chair", "BrandC", 300, "Chair"),
+        ("Apple Table", "BrandA", 100, "Table"),
+        ("Banana Sofa", "BrandB", 200, "Sofa"),
+    ]
+    
+    for name, brand, price, type_name in furniture_data:
+        furniture = Furniture(
+            id=name, brand=brand, name=name, image_filename=f'{name}.png', price=price,
+            type=type_name, description=f'Test {name}', link='', color='Brown', 
+            locations=['Room'], styles=['Modern'], width=100, depth=100, height=100
+        )
+        model.add_furniture(furniture)
+    
+    # 이름으로 오름차순 정렬
+    model.sort_furniture("name", True)
+    assert model.get_furniture_name_at_row(0) == "Apple Table"
+    assert model.get_furniture_name_at_row(1) == "Banana Sofa"
+    assert model.get_furniture_name_at_row(2) == "Zebra Chair"
+    
+    # 이름으로 내림차순 정렬
+    model.sort_furniture("name", False)
+    assert model.get_furniture_name_at_row(0) == "Zebra Chair"
+    assert model.get_furniture_name_at_row(1) == "Banana Sofa"
+    assert model.get_furniture_name_at_row(2) == "Apple Table"
+    
+    # 브랜드로 오름차순 정렬
+    model.sort_furniture("brand", True)
+    assert model.get_furniture_name_at_row(0) == "Apple Table"  # BrandA
+    assert model.get_furniture_name_at_row(1) == "Banana Sofa"  # BrandB
+    assert model.get_furniture_name_at_row(2) == "Zebra Chair"  # BrandC
+    
+    # 가격으로 오름차순 정렬
+    model.sort_furniture("price", True)
+    assert model.get_furniture_name_at_row(0) == "Apple Table"  # 100
+    assert model.get_furniture_name_at_row(1) == "Banana Sofa"  # 200
+    assert model.get_furniture_name_at_row(2) == "Zebra Chair"  # 300
+    
+    # 가격으로 내림차순 정렬
+    model.sort_furniture("price", False)
+    assert model.get_furniture_name_at_row(0) == "Zebra Chair"  # 300
+    assert model.get_furniture_name_at_row(1) == "Banana Sofa"  # 200
+    assert model.get_furniture_name_at_row(2) == "Apple Table"  # 100
+    
+    # 타입으로 정렬
+    model.sort_furniture("type", True)
+    assert model.get_furniture_name_at_row(0) == "Zebra Chair"   # Chair
+    assert model.get_furniture_name_at_row(1) == "Banana Sofa"   # Sofa
+    assert model.get_furniture_name_at_row(2) == "Apple Table"   # Table
+
+
+def test_selected_furniture_drag_drop():
+    """드래그 앤 드롭 기능을 테스트합니다."""
+    model = SelectedFurnitureTableModel()
+    
+    # 드래그 앤 드롭 설정 확인
+    assert Qt.DropAction.MoveAction in model.supportedDropActions()
+    assert "application/x-furniture-order" in model.mimeTypes()
+    
+    # 가구 추가
+    chair = Furniture(
+        id='1', brand='TestBrand', name='Chair', image_filename='chair.png', price=100,
+        type='Chair', description='Test Chair', link='', color='Brown', 
+        locations=['Living Room'], styles=['Modern'], width=60, depth=50, height=80
+    )
+    
+    model.add_furniture(chair)
+    assert model.rowCount() == 1
+    
+    # MIME 데이터 생성 테스트
+    index = model.index(0, 0)
+    mime_data = model.mimeData([index])
+    assert mime_data is not None
+    assert mime_data.hasFormat("application/x-furniture-order")
+    
+    # MIME 데이터에서 가구 이름 확인
+    furniture_name = mime_data.data("application/x-furniture-order").data().decode('utf-8')
+    assert furniture_name == "Chair" 
+
+def test_selected_furniture_column_width_preservation():
+    """가구 순서 변경 시 컬럼 너비 복원 기능을 테스트합니다."""
+    model = SelectedFurnitureTableModel()
+    
+    # 콜백 호출 횟수를 추적하는 모킹 함수
+    callback_call_count = [0]  # 리스트를 사용해서 내부 함수에서 수정 가능하게 함
+    
+    def mock_column_width_callback():
+        callback_call_count[0] += 1
+    
+    # 콜백 설정
+    model.set_column_width_callback(mock_column_width_callback)
+    
+    # 가구 추가 (refresh_model이 호출됨)
+    chair = Furniture(
+        id='1', brand='TestBrand', name='Chair', image_filename='chair.png', price=100,
+        type='Chair', description='Test Chair', link='', color='Brown', 
+        locations=['Living Room'], styles=['Modern'], width=60, depth=50, height=80
+    )
+    
+    model.add_furniture(chair)
+    assert callback_call_count[0] == 1  # add_furniture -> refresh_model -> 콜백 호출
+    
+    # 순서 변경 (refresh_model이 다시 호출됨)
+    model.move_furniture_up("Chair")  # 이미 맨 위이므로 실제로는 변경 안됨
+    
+    # 다른 가구 추가 후 순서 변경
+    table = Furniture(
+        id='2', brand='TestBrand', name='Table', image_filename='table.png', price=200,
+        type='Table', description='Test Table', link='', color='White', 
+        locations=['Dining Room'], styles=['Modern'], width=120, depth=80, height=75
+    )
+    
+    model.add_furniture(table)
+    assert callback_call_count[0] == 2  # 두 번째 add_furniture -> refresh_model -> 콜백 호출
+    
+    # 실제로 순서 변경이 일어나는 경우
+    model.move_furniture_up("Table")  # Table을 위로 이동
+    assert callback_call_count[0] == 3  # move_furniture_up -> refresh_model -> 콜백 호출
+    
+    # 정렬 기능 테스트
+    model.sort_furniture("name", True)
+    assert callback_call_count[0] == 4  # sort_furniture -> refresh_model -> 콜백 호출
+    
+    # 콜백이 제대로 설정되고 호출되는지 확인
+    assert model.column_width_callback is not None
+    assert callable(model.column_width_callback) 

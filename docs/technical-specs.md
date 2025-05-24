@@ -67,6 +67,38 @@ class CollageFurnitureState:
 
 ### 4.3 가구 아이템 UI 기능
 
+#### 하단 패널 순서 변경 🆕
+하단 패널에서 가구 아이템들의 순서를 변경할 수 있는 기능:
+
+```python
+# 순서 변경 방식
+class FurnitureOrderManager:
+    DRAG_DROP = "drag_drop"      # 드래그 앤 드롭
+    BUTTON_CONTROL = "button"    # 버튼을 통한 이동
+    AUTO_SORT = "auto_sort"      # 자동 정렬
+
+# 정렬 기준
+class SortCriteria(Enum):
+    NAME_ASC = "name_asc"        # 이름 오름차순
+    NAME_DESC = "name_desc"      # 이름 내림차순
+    BRAND_ASC = "brand_asc"      # 브랜드 오름차순
+    BRAND_DESC = "brand_desc"    # 브랜드 내림차순
+    PRICE_ASC = "price_asc"      # 가격 오름차순
+    PRICE_DESC = "price_desc"    # 가격 내림차순
+    TYPE_ASC = "type_asc"        # 타입 오름차순
+    TYPE_DESC = "type_desc"      # 타입 내림차순
+    CUSTOM = "custom"            # 사용자 정의 순서
+```
+
+**기능 사양:**
+- 드래그 앤 드롭을 통한 직관적인 순서 변경
+- 버튼을 통한 한 칸씩 이동 (위/아래)
+- 맨 위/맨 아래로 한 번에 이동
+- 다양한 기준으로 자동 정렬
+- 순서 변경 후 상태 저장 및 복원
+- 실시간 시각적 피드백
+- **컬럼 너비 자동 보존**: 순서 변경 후에도 사용자 조정 컬럼 너비 유지 🆕
+
 #### 리사이즈 핸들
 가구 아이템의 크기 조절을 위한 핸들 시스템:
 

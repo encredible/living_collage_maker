@@ -370,6 +370,72 @@ class SelectedFurnitureTableModel(QStandardItemModel):
             "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자", "개수"
         ])
         self.furniture_count = {}  # 가구별 개수 저장
+        self.furniture_order = []  # 가구 순서 저장 (가구 이름 리스트)
+        self.column_width_callback = None  # 컬럼 너비 복원 콜백
+    
+    def set_column_width_callback(self, callback):
+        """컬럼 너비 복원 콜백을 설정합니다."""
+        self.column_width_callback = callback
+    
+    def supportedDropActions(self):
+        """지원하는 드롭 액션을 반환합니다."""
+        return Qt.DropAction.MoveAction
+    
+    def flags(self, index):
+        """아이템의 플래그를 반환합니다."""
+        default_flags = super().flags(index)
+        if index.isValid():
+            return default_flags | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled
+        else:
+            return default_flags | Qt.ItemFlag.ItemIsDropEnabled
+    
+    def mimeTypes(self):
+        """지원하는 MIME 타입을 반환합니다."""
+        return ["application/x-furniture-order"]
+    
+    def mimeData(self, indexes):
+        """드래그할 데이터를 생성합니다."""
+        if not indexes:
+            return None
+        
+        # 첫 번째 선택된 행의 가구 이름 가져오기
+        row = indexes[0].row()
+        furniture_name = self.get_furniture_name_at_row(row)
+        
+        if furniture_name:
+            mime_data = QMimeData()
+            mime_data.setData("application/x-furniture-order", furniture_name.encode('utf-8'))
+            return mime_data
+        
+        return None
+    
+    def dropMimeData(self, data, action, row, column, parent):
+        """드롭된 데이터를 처리합니다."""
+        if action != Qt.DropAction.MoveAction:
+            return False
+        
+        if not data.hasFormat("application/x-furniture-order"):
+            return False
+        
+        # 드래그된 가구 이름 가져오기
+        furniture_name = data.data("application/x-furniture-order").data().decode('utf-8')
+        
+        # 드롭 위치 계산
+        if row == -1:
+            if parent.isValid():
+                drop_row = parent.row()
+            else:
+                drop_row = self.rowCount()
+        else:
+            drop_row = row
+        
+        # 드롭 위치가 유효한지 확인
+        if 0 <= drop_row <= len(self.furniture_order):
+            # 가구 순서 변경
+            if self.move_furniture_to_position(furniture_name, drop_row):
+                return True
+        
+        return False
     
     def add_furniture(self, furniture: Furniture):
         furniture_key = furniture.name
@@ -377,16 +443,113 @@ class SelectedFurnitureTableModel(QStandardItemModel):
             self.furniture_count[furniture_key]['count'] += 1
         else:
             self.furniture_count[furniture_key] = {'furniture': furniture, 'count': 1}
+            # 새 가구면 순서 리스트에 추가
+            if furniture_key not in self.furniture_order:
+                self.furniture_order.append(furniture_key)
         
         self.refresh_model()
     
     def clear_furniture(self):
         self.furniture_count.clear()
+        self.furniture_order.clear()
         self.clear()
         self.setHorizontalHeaderLabels([
             "이름", "브랜드", "타입", "가격", "색상", 
             "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자", "개수"
         ])
+    
+    def move_furniture_up(self, furniture_name: str):
+        """가구를 한 단계 위로 이동"""
+        if furniture_name in self.furniture_order:
+            current_index = self.furniture_order.index(furniture_name)
+            if current_index > 0:
+                # 위 항목과 위치 교환
+                self.furniture_order[current_index], self.furniture_order[current_index - 1] = \
+                    self.furniture_order[current_index - 1], self.furniture_order[current_index]
+                self.refresh_model()
+                return current_index - 1
+        return -1
+    
+    def move_furniture_down(self, furniture_name: str):
+        """가구를 한 단계 아래로 이동"""
+        if furniture_name in self.furniture_order:
+            current_index = self.furniture_order.index(furniture_name)
+            if current_index < len(self.furniture_order) - 1:
+                # 아래 항목과 위치 교환
+                self.furniture_order[current_index], self.furniture_order[current_index + 1] = \
+                    self.furniture_order[current_index + 1], self.furniture_order[current_index]
+                self.refresh_model()
+                return current_index + 1
+        return -1
+    
+    def move_furniture_to_top(self, furniture_name: str):
+        """가구를 맨 위로 이동"""
+        if furniture_name in self.furniture_order:
+            self.furniture_order.remove(furniture_name)
+            self.furniture_order.insert(0, furniture_name)
+            self.refresh_model()
+            return 0
+        return -1
+    
+    def move_furniture_to_bottom(self, furniture_name: str):
+        """가구를 맨 아래로 이동"""
+        if furniture_name in self.furniture_order:
+            self.furniture_order.remove(furniture_name)
+            self.furniture_order.append(furniture_name)
+            self.refresh_model()
+            return len(self.furniture_order) - 1
+        return -1
+    
+    def move_furniture_to_position(self, furniture_name: str, new_position: int):
+        """가구를 특정 위치로 이동 (드래그 앤 드롭용)"""
+        if furniture_name in self.furniture_order:
+            old_position = self.furniture_order.index(furniture_name)
+            if old_position != new_position and 0 <= new_position < len(self.furniture_order):
+                # 기존 위치에서 제거
+                self.furniture_order.pop(old_position)
+                # 새 위치에 삽입
+                self.furniture_order.insert(new_position, furniture_name)
+                self.refresh_model()
+                return True
+        return False
+    
+    def sort_furniture(self, sort_by: str, ascending: bool = True):
+        """가구를 지정된 기준으로 정렬"""
+        if not self.furniture_count:
+            return
+        
+        # 정렬할 가구 리스트 생성
+        furniture_list = []
+        for furniture_name in self.furniture_order:
+            if furniture_name in self.furniture_count:
+                furniture_info = self.furniture_count[furniture_name]
+                furniture = furniture_info['furniture']
+                furniture_list.append((furniture_name, furniture))
+        
+        # 정렬 기준에 따른 키 함수 정의
+        if sort_by == "name":
+            key_func = lambda x: x[1].name.lower()
+        elif sort_by == "brand":
+            key_func = lambda x: x[1].brand.lower()
+        elif sort_by == "price":
+            key_func = lambda x: x[1].price or 0
+        elif sort_by == "type":
+            key_func = lambda x: x[1].type.lower()
+        else:
+            return  # 알 수 없는 정렬 기준
+        
+        # 정렬 수행
+        furniture_list.sort(key=key_func, reverse=not ascending)
+        
+        # 순서 리스트 업데이트
+        self.furniture_order = [item[0] for item in furniture_list]
+        self.refresh_model()
+    
+    def get_furniture_name_at_row(self, row: int):
+        """지정된 행의 가구 이름을 반환"""
+        if 0 <= row < len(self.furniture_order):
+            return self.furniture_order[row]
+        return None
     
     def refresh_model(self):
         self.clear()
@@ -395,36 +558,42 @@ class SelectedFurnitureTableModel(QStandardItemModel):
             "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자", "개수"
         ])
         
-        # 가구별로 행 추가
-        for furniture_info in self.furniture_count.values():
-            furniture = furniture_info['furniture']
-            count = furniture_info['count']
-            
-            # 각 컬럼에 맞는 데이터 생성 (13개 컬럼)
-            row_data = [
-                furniture.name or "",                                    # 이름
-                furniture.brand or "",                                   # 브랜드
-                furniture.type or "",                                    # 타입
-                f"₩{furniture.price:,}" if furniture.price else "",      # 가격
-                furniture.color or "",                                   # 색상
-                ", ".join(furniture.locations) if furniture.locations else "",  # 위치
-                ", ".join(furniture.styles) if furniture.styles else "",        # 스타일
-                self._format_size(furniture.width, furniture.depth, furniture.height),  # 크기
-                f"{furniture.seat_height}mm" if furniture.seat_height else "",   # 좌석높이
-                self._truncate_text(furniture.description or "", 50),    # 설명
-                furniture.link or "",                                    # 링크
-                furniture.author or "",                                  # 작성자
-                str(count)                                              # 개수
-            ]
-            
-            # QStandardItem 리스트 생성 및 추가
-            items = [QStandardItem(str(data)) for data in row_data]
-            
-            # 모든 아이템을 편집 불가능하게 설정
-            for item in items:
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            
-            self.appendRow(items)
+        # 순서에 따라 가구별로 행 추가
+        for furniture_name in self.furniture_order:
+            if furniture_name in self.furniture_count:
+                furniture_info = self.furniture_count[furniture_name]
+                furniture = furniture_info['furniture']
+                count = furniture_info['count']
+                
+                # 각 컬럼에 맞는 데이터 생성 (13개 컬럼)
+                row_data = [
+                    furniture.name or "",                                    # 이름
+                    furniture.brand or "",                                   # 브랜드
+                    furniture.type or "",                                    # 타입
+                    f"₩{furniture.price:,}" if furniture.price else "",      # 가격
+                    furniture.color or "",                                   # 색상
+                    ", ".join(furniture.locations) if furniture.locations else "",  # 위치
+                    ", ".join(furniture.styles) if furniture.styles else "",        # 스타일
+                    self._format_size(furniture.width, furniture.depth, furniture.height),  # 크기
+                    f"{furniture.seat_height}mm" if furniture.seat_height else "",   # 좌석높이
+                    self._truncate_text(furniture.description or "", 50),    # 설명
+                    furniture.link or "",                                    # 링크
+                    furniture.author or "",                                  # 작성자
+                    str(count)                                              # 개수
+                ]
+                
+                # QStandardItem 리스트 생성 및 추가
+                items = [QStandardItem(str(data)) for data in row_data]
+                
+                # 모든 아이템을 편집 불가능하게 설정
+                for item in items:
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                
+                self.appendRow(items)
+        
+        # 모델 새로고침 후 컬럼 너비 복원
+        if self.column_width_callback:
+            self.column_width_callback()
     
     def _format_size(self, width, depth, height):
         """크기 정보를 포맷팅합니다."""
