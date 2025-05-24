@@ -61,6 +61,14 @@ class ImageAdjuster:
             return QPixmap()
 
         try:
+            # 모든 값이 기본값이면 원본 반환
+            if color_temp == 6500 and brightness == 100 and saturation == 100:
+                return pixmap.copy()
+            
+            # 밝기만 조절하는 경우 (색온도와 채도가 기본값)
+            if color_temp == 6500 and saturation == 100 and brightness != 100:
+                return ImageAdjuster.apply_brightness_only(pixmap, brightness)
+            
             if pixmap not in ImageAdjuster._image_id_map:
                 ImageAdjuster._image_id_counter += 1
                 ImageAdjuster._image_id_map[pixmap] = ImageAdjuster._image_id_counter
@@ -138,7 +146,84 @@ class ImageAdjuster:
             # traceback.print_exc()
             # print(f"[ImageAdjuster] 이미지 처리 중 오류 발생: {e}") # TODO: 로깅 라이브러리로 대체 고려
             return pixmap.copy() # 오류 발생 시 원본의 복사본 반환
+    
+    @staticmethod
+    def apply_brightness_only(pixmap, brightness):
+        """밝기만 조절하는 간단하고 안전한 메서드"""
+        if pixmap is None or pixmap.isNull():
+            return QPixmap()
+        
+        if brightness == 100:
+            return pixmap.copy()
+        
+        try:
+            import numpy as np
+            if not ImageAdjuster._use_numpy:
+                raise ImportError("NumPy 사용 불가")
             
+            image = pixmap.toImage()
+            width = image.width()
+            height = image.height()
+            original_format = image.format()
+            
+            # 이미지 데이터를 NumPy 배열로 변환
+            ptr = image.constBits()
+            ptr.setsize(image.sizeInBytes())
+            arr = np.array(ptr).reshape(height, width, 4).copy()
+            
+            # 밝기 조정 계수
+            brightness_factor = brightness / 100.0
+            
+            # RGB 채널만 조정 (알파 채널은 유지)
+            # QImage는 BGRA 순서
+            arr[:, :, 0] = np.clip(arr[:, :, 0].astype(np.float32) * brightness_factor, 0, 255).astype(np.uint8)  # B
+            arr[:, :, 1] = np.clip(arr[:, :, 1].astype(np.float32) * brightness_factor, 0, 255).astype(np.uint8)  # G
+            arr[:, :, 2] = np.clip(arr[:, :, 2].astype(np.float32) * brightness_factor, 0, 255).astype(np.uint8)  # R
+            # 알파 채널(arr[:, :, 3])은 변경하지 않음
+            
+            # 결과 이미지 생성
+            result_image = QImage(arr.data, width, height, image.bytesPerLine(), original_format)
+            return QPixmap.fromImage(result_image).copy()
+            
+        except Exception as e:
+            print(f"[ImageAdjuster] 밝기 조정 중 오류 (NumPy 방식): {e}")
+            # NumPy 실패 시 기본 방식으로 처리
+            return ImageAdjuster._apply_brightness_simple(pixmap, brightness)
+    
+    @staticmethod
+    def _apply_brightness_simple(pixmap, brightness):
+        """NumPy 없이 밝기만 조절하는 간단한 방법"""
+        try:
+            image = pixmap.toImage()
+            width = image.width()
+            height = image.height()
+            result_image = QImage(width, height, image.format())
+            
+            brightness_factor = brightness / 100.0
+            
+            # 룩업 테이블 생성 (0-255 각 값에 대한 밝기 조정된 값)
+            brightness_lut = {}
+            for i in range(256):
+                brightness_lut[i] = min(255, max(0, int(i * brightness_factor)))
+            
+            for y in range(height):
+                for x in range(width):
+                    color = image.pixelColor(x, y)
+                    
+                    # RGB 값에만 밝기 적용 (알파는 유지)
+                    new_r = brightness_lut[color.red()]
+                    new_g = brightness_lut[color.green()]
+                    new_b = brightness_lut[color.blue()]
+                    
+                    new_color = QColor(new_r, new_g, new_b, color.alpha())
+                    result_image.setPixelColor(x, y, new_color)
+            
+            return QPixmap.fromImage(result_image)
+            
+        except Exception as e:
+            print(f"[ImageAdjuster] 밝기 조정 중 오류 (기본 방식): {e}")
+            return pixmap.copy()
+    
     @staticmethod
     def apply_effects_numpy(pixmap, color_temp, brightness, saturation):
         """NumPy 벡터화를 사용한 효율적인 이미지 처리"""

@@ -78,7 +78,7 @@ class FurnitureItem(QWidget):
         # 이미지 조정 다이얼로그의 슬라이더 값 변경 디바운싱용 타이머
         self.update_timer = QTimer(self)
         self.update_timer.setSingleShot(True)
-        self.update_timer.setInterval(100)
+        self.update_timer.setInterval(120)
         self.update_timer.timeout.connect(self.apply_pending_update)
         
         self.is_selected = False
@@ -452,8 +452,8 @@ class FurnitureItem(QWidget):
         # 현재 이미지 백업 (깊은 복사)
         self.backup_pixmap = self.pixmap.copy()
         
-        # 미리보기용 축소 이미지 생성 (더 작게)
-        PREVIEW_MAX_SIZE = 250  # 미리보기 최대 크기를 더 작게 설정 (성능 향상)
+        # 미리보기용 축소 이미지 생성 (고화질로 개선)
+        PREVIEW_MAX_SIZE = 400  # 미리보기 최대 크기 증가 (화질 개선)
         
         # 미리보기 이미지 크기 계산
         if self.original_pixmap.width() > self.original_pixmap.height():
@@ -463,11 +463,11 @@ class FurnitureItem(QWidget):
             preview_height = min(PREVIEW_MAX_SIZE, self.original_pixmap.height())
             preview_width = int(self.original_pixmap.width() * (preview_height / self.original_pixmap.height()))
         
-        # 미리보기 이미지 생성
+        # 미리보기 이미지 생성 (고품질 변환 사용)
         self.preview_pixmap = self.original_pixmap.scaled(
             preview_width, preview_height,
             Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.FastTransformation  # 빠른 변환 사용
+            Qt.TransformationMode.SmoothTransformation  # 고품질 변환 사용
         )
         
         # 명시적 깊은 복사 추가
@@ -479,8 +479,8 @@ class FurnitureItem(QWidget):
         # 처리 중 플래그 (동시에 여러 처리 방지)
         self.is_processing = False
         
-        # 타이머 설정 업데이트
-        self.update_timer.setInterval(150)  # 150ms로 늘려 CPU 부하 감소
+        # 타이머 설정 업데이트 (화질 개선을 위해 약간 더 자주 업데이트)
+        self.update_timer.setInterval(120)  # 120ms로 설정하여 품질과 성능 균형
         
         self.adjust_dialog = QDialog(self)
         self.adjust_dialog.setWindowTitle("이미지 조정")
@@ -732,7 +732,7 @@ class FurnitureItem(QWidget):
         if self.update_timer.isActive():
             return
             
-        # 타이머 시작 (100ms 후에 이미지 처리 수행)
+        # 타이머 시작 (120ms 후에 이미지 처리 수행)
         self.update_timer.start()
     
     def apply_pending_update(self):
@@ -752,14 +752,14 @@ class FurnitureItem(QWidget):
             if not hasattr(self, 'preview_pixmap') or self.preview_pixmap is None or self.preview_pixmap.isNull():
                 return
             
-            # 미리보기 이미지 크기를 더 작게 조정 (슬라이더 움직임 중에는 더 작은 이미지로 처리)
-            SMALL_PREVIEW_SIZE = 150  # 더 작은 미리보기 크기로 성능 향상
+            # 미리보기 이미지 크기를 적당히 조정 (슬라이더 움직임 중 품질과 성능 균형)
+            SMALL_PREVIEW_SIZE = 250  # 적당한 미리보기 크기로 화질 개선
             
-            # 미리보기용 작은 이미지 생성 (처리 속도 향상)
+            # 미리보기용 이미지 생성 (적당한 품질 유지)
             temp_preview = self.preview_pixmap.scaled(
                 SMALL_PREVIEW_SIZE, SMALL_PREVIEW_SIZE,
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.FastTransformation
+                Qt.TransformationMode.SmoothTransformation  # 고품질 변환 사용
             )
             
             # 이미지 처리를 별도 스레드에서 실행
@@ -949,17 +949,27 @@ class FurnitureItem(QWidget):
 
     def reset_image_adjustments(self):
         """이미지 조정을 초기값으로 되돌립니다."""
-        # 슬라이더 초기화 (다이얼로그가 열려있을 경우)
-        # 이 부분은 다이얼로그가 직접 관리하거나, reset 호출 시 다이얼로그에 알리는 방식으로 변경되어야 함
-        # FurnitureItem이 직접 슬라이더 객체를 소유하지 않으므로 아래 코드는 AttributeError 유발
-        # self.temp_slider.setValue(6500)  # 기본 색온도
-        # self.brightness_slider.setValue(100)  # 기본 밝기
-        # self.saturation_slider.setValue(100)  # 기본 채도
-
         # 값 초기화
         self.color_temp = 6500
         self.brightness = 100
         self.saturation = 100
+        
+        # 다이얼로그가 열려있을 경우 슬라이더 값들도 초기화
+        if hasattr(self, 'adjust_dialog') and self.adjust_dialog:
+            if hasattr(self, 'temp_slider'):
+                self.temp_slider.setValue(6500)
+            if hasattr(self, 'brightness_slider'):
+                self.brightness_slider.setValue(100)
+            if hasattr(self, 'saturation_slider'):
+                self.saturation_slider.setValue(100)
+            
+            # 레이블도 업데이트
+            if hasattr(self, 'temp_label'):
+                self.temp_label.setText("색온도: 6500K")
+            if hasattr(self, 'brightness_label'):
+                self.brightness_label.setText("밝기: 100%")
+            if hasattr(self, 'saturation_label'):
+                self.saturation_label.setText("채도: 100%")
         
         # pixmap을 원본으로 복원
         if self.original_pixmap and not self.original_pixmap.isNull():
