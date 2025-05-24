@@ -4,7 +4,7 @@
 """
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QTableView, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QFrame, QTableView, QVBoxLayout, QWidget, QSizePolicy
 import webbrowser
 
 from .common import SelectedFurnitureTableModel
@@ -90,16 +90,20 @@ class SelectedFurniturePanel(QWidget):
         # 초기 컬럼 너비 설정
         self.setup_column_widths()
 
-        # 높이 제한
-        self.selected_table.setMaximumHeight(200)
-        self.selected_table.setMinimumHeight(150)
+        # 테이블 크기 정책 설정 - 하단 패널 크기에 따라 동적 조정
+        size_policy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.selected_table.setSizePolicy(size_policy)
+        
+        # 최소 높이만 설정 (최대 높이 제한 제거하여 동적 크기 조정 가능)
+        self.selected_table.setMinimumHeight(100)  # 최소 높이를 100으로 줄임
 
         # 더블클릭 이벤트 연결
         self.selected_table.doubleClicked.connect(self.on_double_click)
 
-        layout.addWidget(self.selected_table)
+        # 테이블을 레이아웃에 추가 (stretch factor 1로 설정하여 확장 가능)
+        layout.addWidget(self.selected_table, 1)
 
-        # 총계 표시 영역 추가
+        # 총계 표시 영역 추가 (stretch factor 0으로 고정 크기 유지)
         self.create_summary_section(layout)
 
         print("[선택된 가구 패널] 초기화 완료")
@@ -110,6 +114,8 @@ class SelectedFurniturePanel(QWidget):
 
         # 총계 영역 컨테이너
         summary_widget = QWidget()
+        # 높이 고정 설정
+        summary_widget.setFixedHeight(50)  # 고정 높이 설정
         summary_widget.setStyleSheet("""
             QWidget {
                 background-color: #f8f9fa;
@@ -148,12 +154,15 @@ class SelectedFurniturePanel(QWidget):
         summary_layout.addStretch()
         summary_layout.addWidget(self.total_price_label)
 
-        layout.addWidget(summary_widget)
+        # 총계 영역을 고정 크기로 추가 (stretch factor 0)
+        layout.addWidget(summary_widget, 0)
 
         # 구분선 추가
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.HLine)
         separator.setFrameShadow(QFrame.Shadow.Sunken)
+        # 구분선도 고정 높이 설정
+        separator.setFixedHeight(10)  # 구분선 고정 높이
         separator.setStyleSheet("""
             QFrame {
                 color: #ddd;
@@ -162,7 +171,8 @@ class SelectedFurniturePanel(QWidget):
                 margin: 5px 0;
             }
         """)
-        layout.addWidget(separator)
+        # 구분선도 고정 크기로 추가 (stretch factor 0)
+        layout.addWidget(separator, 0)
 
     def on_column_resized(self, logical_index, old_size, new_size):
         """컬럼 너비가 변경될 때 호출되는 메서드"""
