@@ -786,7 +786,7 @@ def test_canvas_area_background_color(canvas_widget):
     
     # src/ui/canvas.py Canvas.__init__에 설정된 실제 값
     expected_bg_color_in_stylesheet = "background-color: white;"
-    expected_border_in_stylesheet = "border: 2px solid #2C3E50;"
+    expected_border_in_stylesheet = "border: 3px solid #2C3E50;"
     
     actual_stylesheet = canvas_widget.canvas_area.styleSheet()
     

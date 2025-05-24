@@ -3,9 +3,9 @@
 배경 이미지 표시 기능을 제공하는 캔버스 영역입니다.
 """
 
-from PyQt6.QtWidgets import QWidget
-from PyQt6.QtGui import QPainter, QPixmap
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPainter, QPen, QColor
+from PyQt6.QtWidgets import QWidget
 
 
 class CanvasArea(QWidget):
@@ -35,6 +35,19 @@ class CanvasArea(QWidget):
         else:
             # 배경 이미지가 없으면 기본 흰색 배경
             painter.fillRect(self.rect(), Qt.GlobalColor.white)
+        
+        # 내부 그림자 효과를 위한 추가 테두리 그리기
+        rect = self.rect()
+        
+        # 내부 하이라이트 (왼쪽 상단)
+        painter.setPen(QPen(QColor(255, 255, 255, 100), 1))  # 반투명 흰색
+        painter.drawLine(rect.left() + 1, rect.top() + 1, rect.right() - 1, rect.top() + 1)  # 상단 라인
+        painter.drawLine(rect.left() + 1, rect.top() + 1, rect.left() + 1, rect.bottom() - 1)  # 왼쪽 라인
+        
+        # 내부 그림자 (오른쪽 하단)
+        painter.setPen(QPen(QColor(0, 0, 0, 30), 1))  # 반투명 검은색
+        painter.drawLine(rect.right() - 2, rect.top() + 2, rect.right() - 2, rect.bottom() - 2)  # 오른쪽 라인
+        painter.drawLine(rect.left() + 2, rect.bottom() - 2, rect.right() - 2, rect.bottom() - 2)  # 하단 라인
         
         # 부모 클래스의 paintEvent 호출 (필요한 경우)
         super().paintEvent(event) 

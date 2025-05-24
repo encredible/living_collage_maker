@@ -1,7 +1,7 @@
+import base64
 import datetime
 import json
 import os
-import base64
 
 from PyQt6.QtCore import (QPoint, QRect, Qt, QTimer, QByteArray, QBuffer, QIODevice)
 from PyQt6.QtGui import (QColor, QPainter, QPen, QPixmap, QTransform, QGuiApplication)
@@ -17,7 +17,6 @@ from src.ui.utils import ImageAdjuster
 from src.ui.widgets import FurnitureItem, CanvasArea
 
 
-
 class Canvas(QWidget):
     CANVAS_MIN_HEIGHT = 200
     CANVAS_MIN_WIDTH = 300
@@ -29,11 +28,11 @@ class Canvas(QWidget):
         # 또는 아주 작은 값으로 설정하여 canvas_area가 크기를 주도하도록 함
         self.setMinimumSize(100, 100) # Canvas의 최소 크기
         self.setStyleSheet(""" 
-            QWidget { 
-                background-color: #f8f9fa; /* 연한 회색 배경 */ 
+            Canvas { 
+                background-color: #f0f2f5; /* 연한 회색 배경 */ 
                 border: none;
-                margin: 0px;
-                padding: 0px;
+                 margin: 15px;
+                padding: 15px;
             }
         """)
         
@@ -52,7 +51,8 @@ class Canvas(QWidget):
         self.canvas_area.setStyleSheet("""
             QWidget {
                 background-color: white;
-                border: 2px solid #2C3E50;
+                border: 3px solid #2C3E50;
+                border-radius: 5px;
                 margin: 0px;
                 padding: 0px;
             }
@@ -466,7 +466,8 @@ class Canvas(QWidget):
             self.canvas_area.setStyleSheet("""
                 QWidget {
                     background-color: white;
-                    border: 2px solid #2C3E50;
+                     border: 3px solid #2C3E50;
+                    border-radius: 5px;
                     margin: 0px;
                     padding: 0px;
                 }
