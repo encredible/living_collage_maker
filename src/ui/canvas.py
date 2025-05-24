@@ -878,22 +878,63 @@ class Canvas(QWidget):
                 self._show_critical_message("오류", f"이미지 저장 중 오류가 발생했습니다: {str(e)}")
 
     def keyPressEvent(self, event):
-        """키보드 이벤트 처리"""
-        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
-            # Delete 또는 Backspace 키로 선택된 아이템들 삭제
-            if self.selected_items:
-                print(f"[키보드 삭제] 선택된 {len(self.selected_items)}개 아이템 삭제")
-                items_to_delete = self.selected_items.copy()
-                for item in items_to_delete:
-                    if item in self.furniture_items:
-                        self.furniture_items.remove(item)
-                    item.deleteLater()
-                self.selected_items.clear()
-                self.update_bottom_panel()
-                print("[키보드 삭제] 완료")
+        """키보드 입력 처리 (아이템 이동, 삭제 등)"""
+        if not self.selected_items:
+            super().keyPressEvent(event) # 선택된 아이템이 없으면 기본 처리
+            return
+
+        delta_x = 0
+        delta_y = 0
+        
+        # Ctrl 키 상태에 따라 이동 간격 조절
+        modifiers = QGuiApplication.keyboardModifiers()
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            move_step = 1  # Ctrl 키 누르면 1px 이동
+        else:
+            move_step = 5  # 기본 5px 이동
+
+        if event.key() == Qt.Key.Key_Left:
+            delta_x = -move_step
+        elif event.key() == Qt.Key.Key_Right:
+            delta_x = move_step
+        elif event.key() == Qt.Key.Key_Up:
+            delta_y = -move_step
+        elif event.key() == Qt.Key.Key_Down:
+            delta_y = move_step
+        elif event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
+            # 다중 선택된 아이템 삭제
+            items_to_delete = list(self.selected_items) # 복사본으로 작업
+            for item in items_to_delete:
+                if item in self.furniture_items:
+                    self.furniture_items.remove(item)
+                item.deleteLater() # 위젯 삭제
+            self.selected_items.clear() # 선택 목록 비우기
+            self.update_bottom_panel()
+            self.canvas_area.update() # 캔버스 영역 업데이트
+            event.accept()
+            return
+        else:
+            super().keyPressEvent(event) # 다른 키는 기본 처리
+            return
+
+        if delta_x != 0 or delta_y != 0:
+            for item in self.selected_items:
+                new_pos = item.pos() + QPoint(delta_x, delta_y)
+                
+                # 캔버스 경계 체크 (선택 사항, 필요에 따라 추가/수정)
+                # new_x = max(0, min(new_pos.x(), self.canvas_area.width() - item.width()))
+                # new_y = max(0, min(new_pos.y(), self.canvas_area.height() - item.height()))
+                # item.move(new_x, new_y)
+                
+                item.move(new_pos) # 경계 체크 없이 이동
+                item.update() 
+            
+            self.update_bottom_panel() # 하단 패널 정보 업데이트
+            self.canvas_area.update() # 캔버스 영역 업데이트 (전체 아이템 이동 후 한 번만 호출 가능)
+            event.accept()
         else:
             super().keyPressEvent(event)
-
+    
     def resize_canvas(self):
         """캔버스 크기를 조절합니다."""
         # 현재 캔버스 크기를 초기값으로 사용
