@@ -3,12 +3,12 @@ import datetime
 import json
 import os
 
-from PyQt6.QtCore import (QPoint, QRect, Qt, QTimer, QByteArray, QBuffer, QIODevice)
+from PyQt6.QtCore import (QPoint, QRect, Qt, QTimer, QByteArray, QBuffer, QIODevice, QSize)
 from PyQt6.QtGui import (QColor, QPainter, QPen, QPixmap, QTransform, QGuiApplication)
 from PyQt6.QtWidgets import (QFileDialog,
                              QMenu,
                              QMessageBox, QVBoxLayout,
-                             QWidget)
+                             QWidget, QRubberBand)
 
 from src.models.furniture import Furniture
 from src.services.supabase_client import SupabaseClient
@@ -66,6 +66,12 @@ class Canvas(QWidget):
         self.furniture_items = []
         self.selected_items = []  # 다중 선택을 위해 리스트로 변경
         
+        # 영역 선택 관련 속성
+        self.rubber_band = QRubberBand(QRubberBand.Shape.Rectangle, self.canvas_area)
+        self.rubber_band.hide()
+        self.selection_start_point = QPoint()
+        self.is_selecting = False
+        
         # 배경 이미지 관련 속성 추가
         self.background_image = None
         self.has_background = False
@@ -74,20 +80,110 @@ class Canvas(QWidget):
         self.canvas_area.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.canvas_area.customContextMenuRequested.connect(self.show_context_menu)
         
-        # 캔버스 영역 클릭 이벤트 설정 (canvas_area에 대해)
+        # 캔버스 영역 마우스 이벤트 설정 (영역 선택 지원)
         self.canvas_area.mousePressEvent = self.canvas_mouse_press_event
+        self.canvas_area.mouseMoveEvent = self.canvas_mouse_move_event
+        self.canvas_area.mouseReleaseEvent = self.canvas_mouse_release_event
         
         # 키보드 포커스 설정 (키 이벤트 수신을 위해)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     
     def canvas_mouse_press_event(self, event):
-        # 빈 공간 클릭 시 선택 해제 (Ctrl/Cmd 키를 누르지 않은 경우만)
+        """캔버스 영역에서 마우스 버튼을 눌렀을 때의 처리"""
         if event.button() == Qt.MouseButton.LeftButton:
-            modifiers = QGuiApplication.keyboardModifiers()
-            if not (modifiers & Qt.KeyboardModifier.ControlModifier):
-                self.deselect_all_items()
-            # 키보드 포커스 설정 (키 이벤트 수신을 위해)
+            # 클릭된 위치에 가구 아이템이 있는지 확인
+            clicked_item = self.get_furniture_item_at_position(event.pos())
+            
+            if clicked_item:
+                # 가구 아이템을 클릭한 경우
+                self.select_furniture_item(clicked_item)
+                self.is_selecting = False
+            else:
+                # 빈 공간을 클릭한 경우 - 영역 선택 시작
+                modifiers = QGuiApplication.keyboardModifiers()
+                
+                # Ctrl 키를 누르지 않은 경우에만 기존 선택 해제
+                if not (modifiers & Qt.KeyboardModifier.ControlModifier):
+                    self.deselect_all_items()
+                
+                # 영역 선택 시작
+                self.selection_start_point = event.pos()
+                self.is_selecting = True
+                rect = QRect(self.selection_start_point, QSize(1, 1))
+                self.rubber_band.setGeometry(rect)
+                self.rubber_band.show()
+            
+            # 키보드 포커스 설정
             self.setFocus()
+    
+    def canvas_mouse_move_event(self, event):
+        """캔버스 영역에서 마우스를 움직일 때의 처리"""
+        if self.is_selecting and event.buttons() & Qt.MouseButton.LeftButton:
+            # 영역 선택 중 - 러버밴드 업데이트
+            current_pos = event.pos()
+            self.rubber_band.setGeometry(QRect(self.selection_start_point, current_pos).normalized())
+    
+    def canvas_mouse_release_event(self, event):
+        """캔버스 영역에서 마우스 버튼을 놓았을 때의 처리"""
+        if event.button() == Qt.MouseButton.LeftButton and self.is_selecting:
+            # 영역 선택 완료
+            self.is_selecting = False
+            self.rubber_band.hide()
+            
+            # 선택 영역 계산
+            selection_rect = QRect(self.selection_start_point, event.pos()).normalized()
+            
+            # 최소 크기 확인 (우연한 클릭 방지)
+            if selection_rect.width() > 5 and selection_rect.height() > 5:
+                self.select_items_in_rectangle(selection_rect)
+    
+    def get_furniture_item_at_position(self, pos):
+        """지정된 위치에 있는 가구 아이템을 반환합니다."""
+        for item in reversed(self.furniture_items):  # 위에 있는 아이템부터 확인
+            if item.geometry().contains(pos):
+                return item
+        return None
+    
+    def select_items_in_rectangle(self, rect):
+        """지정된 사각형 영역 내의 가구 아이템들을 선택합니다."""
+        modifiers = QGuiApplication.keyboardModifiers()
+        selected_items_in_rect = []
+        
+        # 영역 내의 아이템들 찾기
+        for item in self.furniture_items:
+            item_rect = item.geometry()
+            # 아이템이 선택 영역과 겹치는지 확인
+            if rect.intersects(item_rect):
+                selected_items_in_rect.append(item)
+        
+        if selected_items_in_rect:
+            if modifiers & Qt.KeyboardModifier.ControlModifier:
+                # Ctrl 키를 누른 상태: 기존 선택에 추가/제거
+                for item in selected_items_in_rect:
+                    if item in self.selected_items:
+                        # 이미 선택된 아이템이면 해제
+                        self.selected_items.remove(item)
+                        item.is_selected = False
+                    else:
+                        # 선택되지 않은 아이템이면 추가
+                        self.selected_items.append(item)
+                        item.is_selected = True
+                    item.update()
+            else:
+                # Ctrl 키를 누르지 않은 상태: 새로운 선택
+                # 기존 선택 해제 (이미 deselect_all_items가 호출되었지만 안전장치)
+                for item in self.selected_items:
+                    if item not in selected_items_in_rect:
+                        item.is_selected = False
+                        item.update()
+                
+                # 새로 선택된 아이템들 설정
+                self.selected_items = selected_items_in_rect[:]
+                for item in self.selected_items:
+                    item.is_selected = True
+                    item.update()
+            
+            self.update_bottom_panel()
     
     # 가구 아이템 선택 처리 (다중 선택 지원)
     def select_furniture_item(self, item):
