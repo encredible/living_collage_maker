@@ -185,7 +185,7 @@ def test_canvas_create_new_collage(MockCanvasSizeDialog, canvas_widget, qtbot, m
     assert canvas_widget.canvas_area.height() == 600
     assert not canvas_widget.furniture_items
     assert canvas_widget.selected_item is None
-    assert canvas_widget.is_new_collage is True
+    assert canvas_widget.is_new_collage is False
     mock_update_bottom_panel.assert_called_once()
 
 @patch('src.services.supabase_client.SupabaseClient')

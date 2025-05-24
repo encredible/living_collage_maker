@@ -29,8 +29,10 @@ class Canvas(QWidget):
         self.setMinimumSize(100, 100) # Canvas의 최소 크기
         self.setStyleSheet(""" 
             QWidget { 
-                background-color: transparent; /* Canvas 자체는 투명하게 처리 */ 
-                border: none; /* Canvas 자체의 테두리는 제거 */
+                background-color: #f8f9fa; /* 연한 회색 배경 */ 
+                border: none;
+                margin: 0px;
+                padding: 0px;
             }
         """)
         
@@ -38,21 +40,25 @@ class Canvas(QWidget):
         if not ImageAdjuster._initialized:
             ImageAdjuster.initialize()
         
-        # Canvas의 메인 레이아웃
-        # 이 레이아웃은 canvas_area만을 포함하고, canvas_area의 크기에 맞춰 Canvas 크기가 조절되도록 함
+        # Canvas의 메인 레이아웃 (마진 완전 제거)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)  # 위젯 간 간격도 제거
         
-        # 캔버스 영역 (실제 가구가 배치되는 곳, 이 위젯의 크기를 사용자가 조절)
-        self.canvas_area = QWidget() # QWidget으로 유지
-        self.canvas_area.setMinimumSize(self.CANVAS_MIN_WIDTH, self.CANVAS_MIN_HEIGHT) # canvas_area의 최소 크기
+        # 캔버스 영역 (실제 가구가 배치되는 곳)
+        self.canvas_area = QWidget()
+        self.canvas_area.setMinimumSize(self.CANVAS_MIN_WIDTH, self.CANVAS_MIN_HEIGHT)
         self.canvas_area.setStyleSheet("""
-            QWidget { /* canvas_area 스타일 */
+            QWidget {
                 background-color: white;
-                border: 2px solid #2C3E50; /* 작업 영역 테두리 */
+                border: 2px solid #2C3E50;
+                margin: 0px;
+                padding: 0px;
             }
         """)
-        layout.addWidget(self.canvas_area) # Canvas의 레이아웃에 canvas_area 추가
+        
+        # 레이아웃에 canvas_area 추가 (마진 없이)
+        layout.addWidget(self.canvas_area)
         
         # 초기 상태 설정
         self.is_new_collage = True
@@ -66,7 +72,6 @@ class Canvas(QWidget):
         # 캔버스 영역 클릭 이벤트 설정 (canvas_area에 대해)
         self.canvas_area.mousePressEvent = self.canvas_mouse_press_event
         
-
         # 키보드 포커스 설정 (키 이벤트 수신을 위해)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     
@@ -404,9 +409,11 @@ class Canvas(QWidget):
             print(f"[새 콜라주] 최종 최소 크기: {self.canvas_area.minimumWidth()}x{self.canvas_area.minimumHeight()}")
             
             self.canvas_area.setStyleSheet("""
-                QWidget { /* canvas_area 스타일 */
+                QWidget {
                     background-color: white;
-                    border: 2px solid #2C3E50; /* 작업 영역 테두리 */
+                    border: 2px solid #2C3E50;
+                    margin: 0px;
+                    padding: 0px;
                 }
             """)
             
@@ -460,7 +467,7 @@ class Canvas(QWidget):
             self.canvas_area.resize(expected_width, expected_height)
             
             # 한 번 더 확인
-            QTimer.singleShot(50, lambda: print(f"[캔버스 크기 최종 확인] {self.canvas_area.width()}x{self.canvas_area.height()}"))
+            QTimer.singleShot(50, lambda: print(f"[캔버스 크기 최종 확인] Area: {self.canvas_area.width()}x{self.canvas_area.height()}"))
         else:
             print(f"[캔버스 크기 확인] 올바른 크기 유지됨")
     
@@ -468,6 +475,11 @@ class Canvas(QWidget):
         """캔버스 크기에 맞춰 윈도우 크기를 조정합니다."""
         main_window = self.window()
         if not main_window:
+            return
+        
+        # MainWindow 객체인지 확인 (테스트 호환성)
+        if not hasattr(main_window, 'splitter_horizontal') or not hasattr(main_window, 'splitter_main_vertical'):
+            print(f"[윈도우 크기 조정] MainWindow가 아닌 환경에서 실행됨 - 크기 조정 건너뜀")
             return
         
         # 현재 스플리터 크기 확인 (실제 패널 크기 사용)
@@ -521,6 +533,11 @@ class Canvas(QWidget):
         """스플리터 크기를 조정하여 캔버스가 목표 크기를 가질 수 있도록 합니다."""
         main_window = self.window()
         if not main_window:
+            return
+        
+        # MainWindow 객체인지 확인 (테스트 호환성)
+        if not hasattr(main_window, 'splitter_horizontal') or not hasattr(main_window, 'splitter_main_vertical'):
+            print(f"[스플리터 조정] MainWindow가 아닌 환경에서 실행됨 - 조정 건너뜀")
             return
         
         # 현재 윈도우 전체 크기
@@ -825,4 +842,4 @@ class Canvas(QWidget):
                 self.canvas_area.resize(new_width, new_height)
                 print(f"[Canvas 리사이즈] 새 콜라주 동적 조정: {new_width}x{new_height}")
         else:
-            print(f"[Canvas 리사이즈] 건너뜀 - is_new_collage: {self.is_new_collage}")
+            print(f"[Canvas 리사이즈] 정적 크기 유지 - is_new_collage: {self.is_new_collage}")
