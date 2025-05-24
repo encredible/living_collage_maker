@@ -366,7 +366,7 @@ class SelectedFurnitureTableModel(QStandardItemModel):
     def __init__(self):
         super().__init__()
         self.setHorizontalHeaderLabels([
-            "이름", "브랜드", "타입", "가격", "색상", 
+            "번호", "이름", "브랜드", "타입", "가격", "색상", 
             "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자", "개수"
         ])
         self.furniture_count = {}  # 가구별 개수 저장
@@ -454,7 +454,7 @@ class SelectedFurnitureTableModel(QStandardItemModel):
         self.furniture_order.clear()
         self.clear()
         self.setHorizontalHeaderLabels([
-            "이름", "브랜드", "타입", "가격", "색상", 
+            "번호", "이름", "브랜드", "타입", "가격", "색상", 
             "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자", "개수"
         ])
     
@@ -554,7 +554,7 @@ class SelectedFurnitureTableModel(QStandardItemModel):
     def refresh_model(self):
         self.clear()
         self.setHorizontalHeaderLabels([
-            "이름", "브랜드", "타입", "가격", "색상", 
+            "번호", "이름", "브랜드", "타입", "가격", "색상", 
             "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자", "개수"
         ])
         
@@ -565,8 +565,9 @@ class SelectedFurnitureTableModel(QStandardItemModel):
                 furniture = furniture_info['furniture']
                 count = furniture_info['count']
                 
-                # 각 컬럼에 맞는 데이터 생성 (13개 컬럼)
+                # 각 컬럼에 맞는 데이터 생성 (14개 컬럼)
                 row_data = [
+                    str(self.furniture_order.index(furniture_name) + 1),  # 번호
                     furniture.name or "",                                    # 이름
                     furniture.brand or "",                                   # 브랜드
                     furniture.type or "",                                    # 타입
@@ -586,8 +587,14 @@ class SelectedFurnitureTableModel(QStandardItemModel):
                 items = [QStandardItem(str(data)) for data in row_data]
                 
                 # 모든 아이템을 편집 불가능하게 설정
-                for item in items:
+                for i, item in enumerate(items):
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    # 번호 컬럼은 가운데 정렬 및 볼드 스타일
+                    if i == 0:  # 번호 컬럼
+                        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                        font = item.font()
+                        font.setBold(True)
+                        item.setFont(font)
                 
                 self.appendRow(items)
         

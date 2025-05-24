@@ -17,21 +17,22 @@ class SelectedFurniturePanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # 컬럼 너비를 저장하는 딕셔너리 (기본값, 13개 컬럼)
+        # 컬럼 너비를 저장하는 딕셔너리 (기본값, 14개 컬럼)
         self.column_widths = {
-            0: 300,  # 이름 (2배로 증가)
-            1: 120,  # 브랜드
-            2: 80,   # 타입
-            3: 100,  # 가격
-            4: 80,   # 색상
-            5: 120,  # 위치
-            6: 100,  # 스타일
-            7: 140,  # 크기
-            8: 80,   # 좌석높이
-            9: 200,  # 설명
-            10: 150, # 링크
-            11: 100, # 작성자
-            12: 60,  # 개수 (맨 오른쪽)
+            0: 50,   # 번호 (새로 추가)
+            1: 300,  # 이름 (2배로 증가)
+            2: 120,  # 브랜드
+            3: 80,   # 타입
+            4: 100,  # 가격
+            5: 80,   # 색상
+            6: 120,  # 위치
+            7: 100,  # 스타일
+            8: 140,  # 크기
+            9: 80,   # 좌석높이
+            10: 200, # 설명
+            11: 150, # 링크
+            12: 100, # 작성자
+            13: 60,  # 개수 (맨 오른쪽)
         }
         self.setup_ui()
 
@@ -418,8 +419,8 @@ class SelectedFurniturePanel(QWidget):
     def on_double_click(self, index):
         """테이블 아이템 더블클릭 시 처리"""
         if index.isValid():
-            # 링크 컬럼(10번 컬럼)을 클릭한 경우 웹 브라우저로 링크 열기
-            if index.column() == 10:  # 링크 컬럼
+            # 링크 컬럼(11번 컬럼)을 클릭한 경우 웹 브라우저로 링크 열기
+            if index.column() == 11:  # 링크 컬럼
                 link_text = self.selected_model.data(index, Qt.ItemDataRole.DisplayRole)
                 if link_text and link_text.strip():
                     print(f"[선택된 가구 패널] 링크 열기: {link_text}")

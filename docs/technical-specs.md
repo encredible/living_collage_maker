@@ -91,6 +91,7 @@ class SortCriteria(Enum):
 ```
 
 **기능 사양:**
+- **자동 번호 매기기**: 가구 목록의 첫 번째 컬럼에 1번부터 순차적으로 번호 표시 🆕
 - 드래그 앤 드롭을 통한 직관적인 순서 변경
 - 버튼을 통한 한 칸씩 이동 (위/아래)
 - 맨 위/맨 아래로 한 번에 이동
@@ -313,3 +314,13 @@ LivingCollageMaker/
 - WeakReference 사용
 - 가비지 컬렉션 최적화
 - 리소스 자동 해제 
+
+# 번호 컬럼 자동 생성 로직
+def refresh_model(self):
+    for furniture_name in self.furniture_order:
+        row_number = self.furniture_order.index(furniture_name) + 1
+        row_data = [
+            str(row_number),  # 번호 (1부터 시작)
+            furniture.name,   # 이름
+            # ... 기타 컬럼들 ...
+        ] 

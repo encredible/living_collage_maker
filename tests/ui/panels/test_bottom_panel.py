@@ -90,7 +90,7 @@ def test_selected_furniture_panel_column_width_preservation(qtbot, sample_furnit
     
     # 컬럼 너비가 설정되어 있는지 확인
     assert panel.column_widths is not None
-    assert len(panel.column_widths) == 13  # 13개 컬럼
+    assert len(panel.column_widths) == 14  # 14개 컬럼
     
     # setup_column_widths 메서드가 호출 가능한지 확인
     assert hasattr(panel, 'setup_column_widths')

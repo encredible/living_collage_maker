@@ -402,10 +402,10 @@ def test_selected_furniture_table_model():
     """SelectedFurnitureTableModel의 기본 동작을 테스트합니다."""
     model = SelectedFurnitureTableModel()
     
-    # 초기 상태 확인 (새로운 13개 컬럼, 총 가격 제거됨)
-    assert model.columnCount() == 13
+    # 초기 상태 확인 (새로운 14개 컬럼, 번호 컬럼 추가)
+    assert model.columnCount() == 14
     expected_headers = [
-        "이름", "브랜드", "타입", "가격", "색상", 
+        "번호", "이름", "브랜드", "타입", "가격", "색상", 
         "위치", "스타일", "크기(W×D×H)", "좌석높이", "설명", "링크", "작성자", "개수"
     ]
     for i, header in enumerate(expected_headers):
@@ -424,25 +424,26 @@ def test_selected_furniture_table_model():
     # 모델에 행이 추가되었는지 확인
     assert model.rowCount() == 1
     
-    # 각 컬럼의 데이터 확인 (13개 컬럼)
-    assert model.item(0, 0).text() == "Test Chair"  # 이름
-    assert model.item(0, 1).text() == "TestBrand"   # 브랜드
-    assert model.item(0, 2).text() == "Chair"       # 타입
-    assert model.item(0, 3).text() == "₩100"        # 가격
-    assert model.item(0, 4).text() == "Brown"       # 색상
-    assert model.item(0, 5).text() == "Living Room" # 위치
-    assert model.item(0, 6).text() == "Modern"      # 스타일
-    assert model.item(0, 7).text() == "60×50×80mm"  # 크기
-    assert model.item(0, 8).text() == "45mm"        # 좌석높이
-    assert model.item(0, 9).text() == "Test Description"  # 설명
-    assert model.item(0, 10).text() == "http://example.com"  # 링크
-    assert model.item(0, 11).text() == "TestAuthor"
-    assert model.item(0, 12).text() == "1"          # 개수
+    # 각 컬럼의 데이터 확인 (14개 컬럼)
+    assert model.item(0, 0).text() == "1"  # 번호
+    assert model.item(0, 1).text() == "Test Chair"  # 이름
+    assert model.item(0, 2).text() == "TestBrand"   # 브랜드
+    assert model.item(0, 3).text() == "Chair"       # 타입
+    assert model.item(0, 4).text() == "₩100"        # 가격
+    assert model.item(0, 5).text() == "Brown"       # 색상
+    assert model.item(0, 6).text() == "Living Room" # 위치
+    assert model.item(0, 7).text() == "Modern"      # 스타일
+    assert model.item(0, 8).text() == "60×50×80mm"  # 크기
+    assert model.item(0, 9).text() == "45mm"        # 좌석높이
+    assert model.item(0, 10).text() == "Test Description"  # 설명
+    assert model.item(0, 11).text() == "http://example.com"  # 링크
+    assert model.item(0, 12).text() == "TestAuthor"
+    assert model.item(0, 13).text() == "1"          # 개수
     
     # 같은 가구 다시 추가 (개수 증가 확인)
     model.add_furniture(sample_furniture)
     assert model.rowCount() == 1  # 여전히 1행 (같은 가구)
-    assert model.item(0, 12).text() == "2"  # 개수가 2로 증가
+    assert model.item(0, 13).text() == "2"  # 개수가 2로 증가
     
     # 총계 계산 테스트
     assert model.get_total_count() == 2
@@ -667,3 +668,79 @@ def test_selected_furniture_column_width_preservation():
     # 콜백이 제대로 설정되고 호출되는지 확인
     assert model.column_width_callback is not None
     assert callable(model.column_width_callback) 
+
+def test_selected_furniture_row_numbers():
+    """번호 컬럼이 순서에 따라 올바르게 업데이트되는지 테스트합니다."""
+    model = SelectedFurnitureTableModel()
+    
+    # 테스트 가구들 생성
+    chair = Furniture(
+        id='1', brand='TestBrand', name='Chair', image_filename='chair.png', price=100,
+        type='Chair', description='Test Chair', link='', color='Brown', 
+        locations=['Living Room'], styles=['Modern'], width=60, depth=50, height=80
+    )
+    
+    table = Furniture(
+        id='2', brand='TestBrand', name='Table', image_filename='table.png', price=200,
+        type='Table', description='Test Table', link='', color='White', 
+        locations=['Dining Room'], styles=['Modern'], width=120, depth=80, height=75
+    )
+    
+    sofa = Furniture(
+        id='3', brand='TestBrand', name='Sofa', image_filename='sofa.png', price=300,
+        type='Sofa', description='Test Sofa', link='', color='Gray', 
+        locations=['Living Room'], styles=['Modern'], width=200, depth=100, height=80
+    )
+    
+    # 가구 추가
+    model.add_furniture(chair)
+    model.add_furniture(table)
+    model.add_furniture(sofa)
+    
+    # 초기 번호 확인 (Chair=1, Table=2, Sofa=3)
+    assert model.item(0, 0).text() == "1"  # Chair 번호
+    assert model.item(1, 0).text() == "2"  # Table 번호
+    assert model.item(2, 0).text() == "3"  # Sofa 번호
+    
+    # 가구 이름 확인
+    assert model.item(0, 1).text() == "Chair"
+    assert model.item(1, 1).text() == "Table"
+    assert model.item(2, 1).text() == "Sofa"
+    
+    # Table을 맨 위로 이동 (Table=1, Chair=2, Sofa=3)
+    model.move_furniture_to_top("Table")
+    
+    # 번호가 다시 매겨졌는지 확인
+    assert model.item(0, 0).text() == "1"  # Table 번호
+    assert model.item(1, 0).text() == "2"  # Chair 번호
+    assert model.item(2, 0).text() == "3"  # Sofa 번호
+    
+    # 가구 이름 확인
+    assert model.item(0, 1).text() == "Table"
+    assert model.item(1, 1).text() == "Chair"
+    assert model.item(2, 1).text() == "Sofa"
+    
+    # Sofa를 위로 이동 (Table=1, Sofa=2, Chair=3)
+    model.move_furniture_up("Sofa")
+    
+    # 번호가 다시 매겨졌는지 확인
+    assert model.item(0, 0).text() == "1"  # Table 번호
+    assert model.item(1, 0).text() == "2"  # Sofa 번호
+    assert model.item(2, 0).text() == "3"  # Chair 번호
+    
+    # 가구 이름 확인
+    assert model.item(0, 1).text() == "Table"
+    assert model.item(1, 1).text() == "Sofa"
+    assert model.item(2, 1).text() == "Chair"
+    
+    # 정렬 후에도 번호가 올바른지 확인 (이름순 정렬: Chair=1, Sofa=2, Table=3)
+    model.sort_furniture("name", True)
+    
+    assert model.item(0, 0).text() == "1"  # Chair 번호
+    assert model.item(1, 0).text() == "2"  # Sofa 번호
+    assert model.item(2, 0).text() == "3"  # Table 번호
+    
+    # 가구 이름 확인
+    assert model.item(0, 1).text() == "Chair"
+    assert model.item(1, 1).text() == "Sofa"
+    assert model.item(2, 1).text() == "Table" 
