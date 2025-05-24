@@ -2,13 +2,12 @@ import datetime
 import json
 import os
 
-from PyQt6.QtCore import (QPoint, QRect, Qt)
-from PyQt6.QtGui import (QColor, QPainter, QPen, QPixmap, QTransform)
+from PyQt6.QtCore import (QPoint, QRect, Qt, QTimer)
+from PyQt6.QtGui import (QColor, QPainter, QPen, QPixmap, QTransform, QGuiApplication)
 from PyQt6.QtWidgets import (QFileDialog,
                              QMenu,
                              QMessageBox, QVBoxLayout,
                              QWidget)
-from PyQt6.QtGui import QGuiApplication
 
 from src.models.furniture import Furniture
 from src.services.supabase_client import SupabaseClient
@@ -254,7 +253,9 @@ class Canvas(QWidget):
                 canvas_height = collage_data["canvas"]["height"]
                 # 저장된 콜라주를 불러올 때는 정확한 크기 유지
                 self.canvas_area.setFixedSize(canvas_width, canvas_height)
+                # 불러온 콜라주는 새 콜라주가 아님 (윈도우 리사이즈 시 동적 조정 안 함)
                 self.is_new_collage = False
+                print(f"[콜라주 불러오기] 캔버스 상태: is_new_collage = False")
                 
                 # 가구 아이템 불러오기
                 furniture_items_data = collage_data["furniture_items"]
@@ -437,7 +438,61 @@ class Canvas(QWidget):
             if hasattr(main_window, 'canvas_size_changed'):
                 main_window.canvas_size_changed()
             
+            # 10. 윈도우 크기를 캔버스 크기에 맞춰 조정
+            self.adjust_window_size_to_canvas(width, height)
+            
+            # 11. 윈도우 크기 조정 후 무한 리사이즈 방지를 위해 상태 변경
+            # 잠시 후 is_new_collage를 False로 변경하여 동적 리사이즈 중단
+            QTimer.singleShot(1000, lambda: setattr(self, 'is_new_collage', False))
+            
             print(f"[새 콜라주] 캔버스 완전 초기화 완료: {width}x{height}")
+            print(f"[새 콜라주] 1초 후 동적 리사이즈 중단 예정")
+    
+    def adjust_window_size_to_canvas(self, canvas_width, canvas_height):
+        """캔버스 크기에 맞춰 윈도우 크기를 조정합니다."""
+        main_window = self.window()
+        if not main_window:
+            return
+        
+        # 각 패널의 크기 계산
+        right_panel_width = 400  # 우측 탐색 패널 기본 너비
+        bottom_panel_height = 200  # 하단 패널 기본 높이
+        
+        # 여백 및 기타 UI 요소 크기
+        window_margin = 50  # 윈도우 여백
+        menubar_height = 30  # 메뉴바 높이
+        
+        # 필요한 윈도우 크기 계산
+        required_width = canvas_width + right_panel_width + window_margin
+        required_height = canvas_height + bottom_panel_height + menubar_height + window_margin
+        
+        # 현재 화면 크기 확인 (화면보다 큰 크기로 설정하지 않도록)
+        screen = QGuiApplication.primaryScreen()
+        screen_geometry = screen.availableGeometry()
+        
+        # 화면 크기의 90%를 최대 크기로 제한
+        max_width = int(screen_geometry.width() * 0.9)
+        max_height = int(screen_geometry.height() * 0.9)
+        
+        # 최종 윈도우 크기 결정
+        final_width = min(required_width, max_width)
+        final_height = min(required_height, max_height)
+        
+        # 최소 윈도우 크기 보장
+        final_width = max(final_width, 800)
+        final_height = max(final_height, 600)
+        
+        print(f"[윈도우 크기 조정] 캔버스: {canvas_width}x{canvas_height}")
+        print(f"[윈도우 크기 조정] 계산된 윈도우 크기: {required_width}x{required_height}")
+        print(f"[윈도우 크기 조정] 최종 윈도우 크기: {final_width}x{final_height}")
+        
+        # 윈도우 크기 조정
+        main_window.resize(final_width, final_height)
+        
+        # 윈도우를 화면 중앙에 배치
+        window_x = (screen_geometry.width() - final_width) // 2
+        window_y = (screen_geometry.height() - final_height) // 2
+        main_window.move(window_x, window_y)
 
     def _show_warning_message(self, title: str, message: str):
         """경고 메시지 박스를 표시하는 내부 헬퍼 메소드."""
@@ -632,6 +687,18 @@ class Canvas(QWidget):
             if hasattr(parent_window, 'canvas_size_changed'):
                 parent_window.canvas_size_changed()
             
+            # 윈도우 크기를 캔버스 크기에 맞춰 조정할지 물어보기
+            reply = QMessageBox.question(
+                self,
+                "윈도우 크기 조정",
+                "캔버스 크기에 맞춰 윈도우 크기도 조정하시겠습니까?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                self.adjust_window_size_to_canvas(new_width, new_height)
+            
             self._show_information_message(
                 "알림", 
                 f"캔버스 크기가 {new_width}x{new_height}로 변경되었습니다."
@@ -686,7 +753,8 @@ class Canvas(QWidget):
         """Canvas 크기 변경 시 호출됩니다."""
         super().resizeEvent(event)
         
-        # 새 콜라주 상태일 때는 윈도우 크기에 맞춰 동적 조정
+        # 새 콜라주 상태일 때만 윈도우 크기에 맞춰 동적 조정
+        # 불러온 콜라주나 복원된 콜라주는 동적 조정하지 않음
         if self.is_new_collage and hasattr(self, 'canvas_area') and self.canvas_area:
             # 캔버스 영역을 Canvas 크기에 맞춰 조정 (여백 고려)
             margin = 20  # 여백
@@ -697,4 +765,6 @@ class Canvas(QWidget):
             if (self.canvas_area.width() != new_width or 
                 self.canvas_area.height() != new_height):
                 self.canvas_area.resize(new_width, new_height)
-                print(f"[Canvas 리사이즈] 캔버스 영역 크기 조정: {new_width}x{new_height}")
+                print(f"[Canvas 리사이즈] 새 콜라주 동적 조정: {new_width}x{new_height}")
+        else:
+            print(f"[Canvas 리사이즈] 건너뜀 - is_new_collage: {self.is_new_collage}")

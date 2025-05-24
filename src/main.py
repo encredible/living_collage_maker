@@ -39,6 +39,7 @@ class MainWindow(QMainWindow):
         self.setup_menubar()
         
         # 상태 복원 (UI 설정 후에 호출)
+        print("[MainWindow] UI 설정 완료, 50ms 후 앱 상태 복원 시작")
         QTimer.singleShot(50, self.restore_app_state)
     
     def showEvent(self, event):
@@ -264,6 +265,7 @@ class MainWindow(QMainWindow):
                 width=self.canvas.canvas_area.width(),
                 height=self.canvas.canvas_area.height()
             )
+            print(f"[MainWindow] 저장할 캔버스 상태: {canvas_state.width}x{canvas_state.height}, is_new_collage: {self.canvas.is_new_collage}")
             
             # 패널 상태 수집
             panel_state = PanelState(
@@ -348,8 +350,14 @@ class MainWindow(QMainWindow):
             
             # 캔버스 크기 복원
             if app_state.canvas and app_state.canvas.width > 0 and app_state.canvas.height > 0:
-                self.canvas.canvas_area.setFixedSize(app_state.canvas.width, app_state.canvas.height)
+                print(f"[MainWindow] 캔버스 크기 복원: {app_state.canvas.width}x{app_state.canvas.height}")
+                # setFixedSize 대신 resize 사용 (리사이즈 가능하도록)
+                self.canvas.canvas_area.resize(app_state.canvas.width, app_state.canvas.height)
+                # 최소 크기는 기본값 유지
+                self.canvas.canvas_area.setMinimumSize(self.canvas.CANVAS_MIN_WIDTH, self.canvas.CANVAS_MIN_HEIGHT)
+                # 복원된 콜라주는 새 콜라주가 아님
                 self.canvas.is_new_collage = False
+                print(f"[MainWindow] 캔버스 상태 설정: is_new_collage = False")
             
             # 가구 아이템들 복원
             if app_state.furniture_items:
