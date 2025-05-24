@@ -61,6 +61,12 @@ class ImageAdjuster:
             return QPixmap()
 
         try:
+            # pixmap ID 매핑을 먼저 처리 (모든 경우에 대해)
+            if pixmap not in ImageAdjuster._image_id_map:
+                ImageAdjuster._image_id_counter += 1
+                ImageAdjuster._image_id_map[pixmap] = ImageAdjuster._image_id_counter
+            image_id = ImageAdjuster._image_id_map[pixmap]
+            
             # 모든 값이 기본값이면 원본 반환
             if color_temp == 6500 and brightness == 100 and saturation == 100:
                 return pixmap.copy()
@@ -68,11 +74,6 @@ class ImageAdjuster:
             # 밝기만 조절하는 경우 (색온도와 채도가 기본값)
             if color_temp == 6500 and saturation == 100 and brightness != 100:
                 return ImageAdjuster.apply_brightness_only(pixmap, brightness)
-            
-            if pixmap not in ImageAdjuster._image_id_map:
-                ImageAdjuster._image_id_counter += 1
-                ImageAdjuster._image_id_map[pixmap] = ImageAdjuster._image_id_counter
-            image_id = ImageAdjuster._image_id_map[pixmap]
             
             size_key = f"{pixmap.width()}x{pixmap.height()}"
             cache_key = (image_id, size_key, round(color_temp), round(brightness), round(saturation))
