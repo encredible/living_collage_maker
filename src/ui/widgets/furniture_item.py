@@ -1,6 +1,6 @@
 from typing import Union
 
-from PyQt6.QtCore import QRect, Qt, QTimer
+from PyQt6.QtCore import QRect, Qt, QTimer, QThread
 from PyQt6.QtGui import (QColor, QGuiApplication, QPainter, QPen, QPixmap,
                          QTransform)
 from PyQt6.QtWidgets import (QDialog, QGroupBox, QHBoxLayout, QLabel, QMenu,
@@ -737,39 +737,50 @@ class FurnitureItem(QWidget):
     
     def apply_pending_update(self):
         """지연된 업데이트를 적용합니다."""
-        # 현재 활성화된 처리 스레드가 있으면 중지
-        if hasattr(self, 'processor') and self.processor is not None and self.processor.isRunning():
-            self.processor.quit()  # 작업이 실패할 수 있으므로 종료만 요청
-            # 스레드가 종료될 시간을 주지 않고 바로 다음 스레드 생성
-            # 무한정 기다리면 UI가 멈출 수 있음
-        
-        # 저장된 값으로 업데이트
-        temp = self.pending_temp
-        brightness = self.pending_brightness
-        saturation = self.pending_saturation
-        
-        # 미리보기 이미지 크기를 더 작게 조정 (슬라이더 움직임 중에는 더 작은 이미지로 처리)
-        SMALL_PREVIEW_SIZE = 200  # 더 작은 미리보기 크기
-        
-        # 미리보기용 작은 이미지 생성 (처리 속도 향상)
-        temp_preview = self.preview_pixmap.scaled(
-            SMALL_PREVIEW_SIZE, SMALL_PREVIEW_SIZE,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.FastTransformation
-        )
-        
-        # 이미지 처리를 별도 스레드에서 실행
-        self.processor = ImageProcessor(
-            temp_preview,  # 작은 미리보기 이미지 사용
-            temp, 
-            brightness, 
-            saturation
-        )
-        # 처리 완료 시 콜백 연결
-        self.processor.finished.connect(self.update_processed_image_and_unlock)
-        
-        # 스레드 시작 (우선순위 낮게 설정)
-        self.processor.start(QThread.Priority.LowPriority)
+        try:
+            # 현재 활성화된 처리 스레드가 있으면 중지
+            if hasattr(self, 'processor') and self.processor is not None and self.processor.isRunning():
+                self.processor.should_stop = True
+                self.processor.quit()
+            
+            # 저장된 값으로 업데이트
+            temp = self.pending_temp
+            brightness = self.pending_brightness
+            saturation = self.pending_saturation
+            
+            # 미리보기 이미지가 없으면 건너뛰기
+            if not hasattr(self, 'preview_pixmap') or self.preview_pixmap is None or self.preview_pixmap.isNull():
+                return
+            
+            # 미리보기 이미지 크기를 더 작게 조정 (슬라이더 움직임 중에는 더 작은 이미지로 처리)
+            SMALL_PREVIEW_SIZE = 150  # 더 작은 미리보기 크기로 성능 향상
+            
+            # 미리보기용 작은 이미지 생성 (처리 속도 향상)
+            temp_preview = self.preview_pixmap.scaled(
+                SMALL_PREVIEW_SIZE, SMALL_PREVIEW_SIZE,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.FastTransformation
+            )
+            
+            # 이미지 처리를 별도 스레드에서 실행
+            self.processor = ImageProcessor(
+                temp_preview.copy(),  # 복사본 사용하여 메모리 안정성 확보
+                temp, 
+                brightness, 
+                saturation
+            )
+            # 처리 완료 시 콜백 연결
+            self.processor.finished.connect(self.update_processed_image_and_unlock)
+            # 에러 처리 콜백 연결
+            self.processor.error.connect(self.handle_image_processing_error)
+            
+            # 스레드 시작 (우선순위 낮게 설정)
+            self.processor.start(QThread.Priority.LowPriority)
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[이미지 조정] 미리보기 업데이트 중 오류 발생: {e}")
 
     def update_processed_image_and_unlock(self, processed_pixmap):
         """이미지 처리 결과를 업데이트하고 처리 잠금을 해제합니다."""
@@ -801,9 +812,8 @@ class FurnitureItem(QWidget):
             # 처리 중 플래그 설정
             self.is_processing = True
             
-            # 진행 중인 처리가 있으면 중지
-            if hasattr(self, 'final_processor') and self.final_processor is not None and self.final_processor.isRunning():
-                self.final_processor.quit()
+            # 진행 중인 처리가 있으면 안전하게 중지
+            self.stop_all_threads()
                 
             # 다이얼로그 버튼 비활성화
             if hasattr(self, 'adjust_dialog') and self.adjust_dialog:
@@ -812,7 +822,7 @@ class FurnitureItem(QWidget):
                 
             # 마지막으로 원본 이미지에 최종 효과 적용
             self.final_processor = ImageProcessor(
-                self.original_pixmap,  # 원본 이미지 사용
+                self.original_pixmap.copy(),  # 원본 이미지의 복사본 사용
                 self.color_temp,
                 self.brightness,
                 self.saturation
@@ -820,6 +830,8 @@ class FurnitureItem(QWidget):
             
             # 처리 완료 시 콜백 연결
             self.final_processor.finished.connect(self.finalize_adjustments)
+            # 에러 처리 콜백 연결
+            self.final_processor.error.connect(self.handle_final_processing_error)
             
             # 스레드 시작
             self.final_processor.start()
@@ -880,28 +892,61 @@ class FurnitureItem(QWidget):
     
     def cancel_image_adjustments(self):
         """이미지 조정을 취소하고 원래 이미지로 복원합니다."""
-        # 백업 이미지로 복원
-        if hasattr(self, 'backup_pixmap'):
-            self.pixmap = self.backup_pixmap.copy()
-            self.update()
-        
-        # 처리 중인 스레드 중지
-        self.stop_all_threads()
-        
-        # 다이얼로그 닫기
-        if hasattr(self, 'adjust_dialog') and self.adjust_dialog:
-            self.adjust_dialog.reject()
-    
+        try:
+            # 백업 이미지로 복원
+            if hasattr(self, 'backup_pixmap'):
+                self.pixmap = self.backup_pixmap.copy()
+                self.update()
+            
+            # 처리 중인 모든 스레드 안전하게 중지
+            self.stop_all_threads()
+            
+            # 처리 플래그 해제
+            self.is_processing = False
+            
+            # 메모리 정리
+            if hasattr(self, 'preview_pixmap'):
+                self.preview_pixmap = None
+            if hasattr(self, 'backup_pixmap'):
+                self.backup_pixmap = None
+            
+            # 다이얼로그 닫기
+            if hasattr(self, 'adjust_dialog') and self.adjust_dialog:
+                self.adjust_dialog.reject()
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[이미지 조정] 취소 중 오류 발생: {e}")
+
     def stop_all_threads(self):
         """모든 실행 중인 이미지 처리 스레드를 중지합니다."""
+        # 타이머 중지
+        if hasattr(self, 'update_timer') and self.update_timer:
+            self.update_timer.stop()
+        
         # 미리보기 처리 스레드 중지
-        if hasattr(self, 'processor') and self.processor is not None and self.processor.isRunning():
-            self.processor.quit()
+        if hasattr(self, 'processor') and self.processor is not None:
+            if self.processor.isRunning():
+                self.processor.should_stop = True
+                self.processor.quit()
+                # 스레드가 종료될 때까지 잠시 대기 (최대 100ms)
+                if not self.processor.wait(100):
+                    print("[이미지 조정] 미리보기 스레드 강제 종료")
+                    self.processor.terminate()
+            self.processor = None
             
         # 최종 처리 스레드 중지
-        if hasattr(self, 'final_processor') and self.final_processor is not None and self.final_processor.isRunning():
-            self.final_processor.quit()
-    
+        if hasattr(self, 'final_processor') and self.final_processor is not None:
+            if self.final_processor.isRunning():
+                self.final_processor.should_stop = True
+                self.final_processor.quit()
+                # 스레드가 종료될 때까지 잠시 대기 (최대 100ms)
+                if not self.final_processor.wait(100):
+                    print("[이미지 조정] 최종 처리 스레드 강제 종료")
+                    self.final_processor.terminate()
+            self.final_processor = None
+
     def reset_image_adjustments(self):
         """이미지 조정을 초기값으로 되돌립니다."""
         # 슬라이더 초기화 (다이얼로그가 열려있을 경우)
@@ -972,14 +1017,40 @@ class FurnitureItem(QWidget):
             # 이 else 블록은 테스트 중에 실행되지 않을 것으로 예상됩니다.
 
     def deleteLater(self):
-        """가구 아이템이 삭제될 때 하단 패널을 업데이트합니다."""
-        # 부모 캔버스에서 가구 아이템 목록에서 제거
-        canvas = self.parent()
-        if canvas and hasattr(canvas, 'furniture_items'):
-            if self in canvas.furniture_items:
-                canvas.furniture_items.remove(self)
-                canvas.update_bottom_panel()
-        super().deleteLater()
+        """위젯이 삭제될 때 리소스를 정리하고 스레드를 안전하게 종료합니다."""
+        try:
+            # 이미지 조정 다이얼로그가 열려있으면 닫기
+            if hasattr(self, 'adjust_dialog') and self.adjust_dialog:
+                self.adjust_dialog.close()
+                self.adjust_dialog = None
+            
+            # 모든 스레드 안전하게 정리
+            self.stop_all_threads()
+            
+            # 타이머 정리
+            if hasattr(self, 'update_timer') and self.update_timer:
+                self.update_timer.stop()
+                self.update_timer = None
+            
+            # 이미지 메모리 정리
+            if hasattr(self, 'preview_pixmap'):
+                self.preview_pixmap = None
+            if hasattr(self, 'backup_pixmap'):
+                self.backup_pixmap = None
+            if hasattr(self, 'original_pixmap'):
+                self.original_pixmap = None
+            if hasattr(self, 'pixmap'):
+                self.pixmap = None
+            
+            print(f"[FurnitureItem] 리소스 정리 완료: {self.furniture.name}")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[FurnitureItem] 리소스 정리 중 오류: {e}")
+        finally:
+            # 부모 클래스의 deleteLater 호출
+            super().deleteLater()
 
     def force_update_preview(self):
         """즉시 미리보기를 강제로 업데이트합니다. (슬라이더 놓을 때 호출)"""
@@ -1026,4 +1097,18 @@ class FurnitureItem(QWidget):
         
         # 처리 잠금 해제
         self.is_processing = False
+
+    def handle_image_processing_error(self, error_message):
+        """이미지 처리 에러를 처리합니다."""
+        print(f"[이미지 조정] 미리보기 처리 오류: {error_message}")
+        self.is_processing = False
+
+    def handle_final_processing_error(self, error_message):
+        """최종 이미지 처리 에러를 처리합니다."""
+        print(f"[이미지 조정] 최종 처리 오류: {error_message}")
+        self.is_processing = False
+        
+        # 다이얼로그 닫기
+        if hasattr(self, 'adjust_dialog') and self.adjust_dialog:
+            self.adjust_dialog.accept()
 

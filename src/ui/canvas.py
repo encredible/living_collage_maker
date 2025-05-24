@@ -386,6 +386,15 @@ class Canvas(QWidget):
             
             # 1. 기존 가구 아이템 완전 제거
             for item in self.furniture_items:
+                # 이미지 조정 다이얼로그가 열려있으면 닫기
+                if hasattr(item, 'adjust_dialog') and item.adjust_dialog:
+                    item.adjust_dialog.close()
+                    item.adjust_dialog = None
+                
+                # 스레드들 안전하게 정리
+                if hasattr(item, 'stop_all_threads'):
+                    item.stop_all_threads()
+                
                 item.setParent(None)  # 부모 관계 해제
                 item.deleteLater()
             self.furniture_items.clear()
