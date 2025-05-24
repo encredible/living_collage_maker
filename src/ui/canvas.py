@@ -1,8 +1,9 @@
 import datetime
 import json
 import os
+import base64
 
-from PyQt6.QtCore import (QPoint, QRect, Qt, QTimer)
+from PyQt6.QtCore import (QPoint, QRect, Qt, QTimer, QByteArray, QBuffer, QIODevice)
 from PyQt6.QtGui import (QColor, QPainter, QPen, QPixmap, QTransform, QGuiApplication)
 from PyQt6.QtWidgets import (QFileDialog,
                              QMenu,
@@ -13,7 +14,7 @@ from src.models.furniture import Furniture
 from src.services.supabase_client import SupabaseClient
 from src.ui.dialogs import CanvasSizeDialog
 from src.ui.utils import ImageAdjuster
-from src.ui.widgets import FurnitureItem
+from src.ui.widgets import FurnitureItem, CanvasArea
 
 
 
@@ -46,7 +47,7 @@ class Canvas(QWidget):
         layout.setSpacing(0)  # 위젯 간 간격도 제거
         
         # 캔버스 영역 (실제 가구가 배치되는 곳)
-        self.canvas_area = QWidget()
+        self.canvas_area = CanvasArea(self)
         self.canvas_area.setMinimumSize(self.CANVAS_MIN_WIDTH, self.CANVAS_MIN_HEIGHT)
         self.canvas_area.setStyleSheet("""
             QWidget {
@@ -64,6 +65,10 @@ class Canvas(QWidget):
         self.is_new_collage = True
         self.furniture_items = []
         self.selected_items = []  # 다중 선택을 위해 리스트로 변경
+        
+        # 배경 이미지 관련 속성 추가
+        self.background_image = None
+        self.has_background = False
         
         # 우클릭 메뉴 활성화 (canvas_area에 대해)
         self.canvas_area.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -196,10 +201,29 @@ class Canvas(QWidget):
                         "width": self.canvas_area.width(),
                         "height": self.canvas_area.height(),
                         "saved_at": datetime.datetime.now().isoformat(),
-                        "last_modified": datetime.datetime.now().isoformat()
+                        "last_modified": datetime.datetime.now().isoformat(),
+                        # 배경 이미지 정보 추가
+                        "has_background": self.has_background,
+                        "background_image_data": None
                     },
                     "furniture_items": []
                 }
+                
+                # 배경 이미지가 있으면 데이터로 변환하여 저장
+                if self.has_background and self.background_image and not self.background_image.isNull():
+                    # QPixmap을 바이트 배열로 변환
+                    byte_array = QByteArray()
+                    buffer = QBuffer(byte_array)
+                    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+                    
+                    # PNG 형식으로 저장
+                    success = self.background_image.save(buffer, "PNG")
+                    buffer.close()
+                    
+                    if success:
+                        # 바이트 데이터를 base64로 인코딩하여 JSON에 저장
+                        collage_data["canvas"]["background_image_data"] = base64.b64encode(byte_array.data()).decode('utf-8')
+                        print("[Canvas] 배경 이미지 데이터 저장 완료")
                 
                 # 가구 아이템 정보 수집
                 for i, item in enumerate(self.furniture_items):
@@ -261,6 +285,28 @@ class Canvas(QWidget):
                 # 불러온 콜라주는 새 콜라주가 아님 (윈도우 리사이즈 시 동적 조정 안 함)
                 self.is_new_collage = False
                 print(f"[콜라주 불러오기] 캔버스 상태: is_new_collage = False")
+                
+                # 배경 이미지 복원
+                canvas_info = collage_data["canvas"]
+                if canvas_info.get("has_background", False) and canvas_info.get("background_image_data"):
+                    try:
+                        # base64 디코딩
+                        image_data = base64.b64decode(canvas_info["background_image_data"])
+                        
+                        # QPixmap으로 변환
+                        background_pixmap = QPixmap()
+                        success = background_pixmap.loadFromData(image_data)
+                        
+                        if success and not background_pixmap.isNull():
+                            self.background_image = background_pixmap
+                            self.has_background = True
+                            print("[Canvas] 배경 이미지 복원 완료")
+                        else:
+                            print("[Canvas] 배경 이미지 데이터 복원 실패")
+                    except Exception as e:
+                        print(f"[Canvas] 배경 이미지 복원 중 오류: {e}")
+                        self.background_image = None
+                        self.has_background = False
                 
                 # 가구 아이템 불러오기
                 furniture_items_data = collage_data["furniture_items"]
@@ -406,7 +452,7 @@ class Canvas(QWidget):
             old_canvas_area.deleteLater()
             
             # 새 캔버스 영역 생성
-            self.canvas_area = QWidget()
+            self.canvas_area = CanvasArea(self)
             # 최소 크기는 기본값만 설정 (리사이즈 가능하도록)
             print(f"[새 콜라주] 요청된 크기: {width}x{height}")
             print(f"[새 콜라주] 기본 최소 크기 설정: {self.CANVAS_MIN_WIDTH}x{self.CANVAS_MIN_HEIGHT}")
@@ -594,11 +640,21 @@ class Canvas(QWidget):
         """현재 콜라주를 QPixmap 이미지로 생성합니다."""
         # 캔버스 영역의 크기로 이미지 생성
         image = QPixmap(self.canvas_area.size())
-        image.fill(Qt.GlobalColor.white)
         
         # 이미지에 현재 콜라주 그리기
         painter = QPainter(image)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # 배경 이미지가 있으면 먼저 그리기
+        if self.has_background and self.background_image and not self.background_image.isNull():
+            painter.drawPixmap(
+                image.rect(),
+                self.background_image,
+                self.background_image.rect()
+            )
+        else:
+            # 배경 이미지가 없으면 흰색 배경
+            image.fill(Qt.GlobalColor.white)
         
         # 모든 가구 아이템 그리기
         for item in self.furniture_items:
@@ -852,3 +908,45 @@ class Canvas(QWidget):
                 print(f"[Canvas 리사이즈] 새 콜라주 동적 조정: {new_width}x{new_height}")
         else:
             print(f"[Canvas 리사이즈] 정적 크기 유지 - is_new_collage: {self.is_new_collage}")
+    
+    def set_canvas_background_and_resize(self, background_image: QPixmap, width: int, height: int):
+        """배경 이미지를 설정하고 캔버스 크기를 조정합니다."""
+        if background_image and not background_image.isNull():
+            self.background_image = background_image
+            self.has_background = True
+            
+            # 캔버스 크기를 배경 이미지 크기에 맞춰 조정
+            self.canvas_area.resize(width, height)
+            self.canvas_area.setMinimumSize(width, height)
+            
+            # 새 콜라주 상태가 아니도록 설정 (크기 고정)
+            self.is_new_collage = False
+            
+            # 캔버스 영역 다시 그리기
+            self.canvas_area.update()
+            
+            # 부모 윈도우에 크기 변경 알림
+            parent_window = self.window()
+            if hasattr(parent_window, 'canvas_size_changed'):
+                parent_window.canvas_size_changed()
+            
+            # 윈도우 크기를 캔버스 크기에 맞춰 조정
+            self.adjust_window_size_to_canvas(width, height)
+            
+            print(f"[Canvas] 배경 이미지 설정 완료: {width}x{height}")
+        else:
+            print("[Canvas] 배경 이미지 설정 실패: 유효하지 않은 이미지")
+    
+    def remove_canvas_background(self):
+        """캔버스 배경 이미지를 제거합니다."""
+        self.background_image = None
+        self.has_background = False
+        
+        # 캔버스 영역 다시 그리기 (흰색 배경으로)
+        self.canvas_area.update()
+        
+        print("[Canvas] 배경 이미지가 제거되었습니다.")
+    
+    def get_background_image(self) -> QPixmap:
+        """현재 배경 이미지를 반환합니다."""
+        return self.background_image if self.has_background else None

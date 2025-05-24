@@ -4,13 +4,14 @@ import time
 from PyQt6.QtCore import QPoint, Qt, QTimer
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (QApplication, QHBoxLayout, QMainWindow, QSplitter,
-                             QWidget, QMessageBox)
+                             QWidget, QMessageBox, QFileDialog)
 
 from src.ui.canvas import Canvas
 from src.ui.panels.bottom_panel import BottomPanel
 from src.ui.panels.explorer_panel import ExplorerPanel
 from src.services.html_export_service import HtmlExportService
 from src.services.pdf_export_service import PdfExportService
+from src.services.background_service import BackgroundService
 from src.services.app_state_service import (AppStateService, AppState, WindowState, 
                                            ColumnWidthState, CanvasState, PanelState, 
                                            FurnitureItemState)
@@ -34,6 +35,9 @@ class MainWindow(QMainWindow):
         
         # PDF 내보내기 서비스 초기화
         self.pdf_export_service = PdfExportService(self)
+        
+        # 배경 서비스 초기화
+        self.background_service = BackgroundService()
         
         self.setup_ui()
         self.setup_menubar()
@@ -190,6 +194,17 @@ class MainWindow(QMainWindow):
         clear_cache_action = QAction('앱 캐시 정리', self)
         clear_cache_action.triggered.connect(self.clear_app_cache)
         file_menu.addAction(clear_cache_action)
+        
+        # 캔버스 메뉴 추가
+        canvas_menu = menubar.addMenu('캔버스')
+        
+        set_background_action = QAction('배경 설정', self)
+        set_background_action.triggered.connect(self.set_canvas_background)
+        canvas_menu.addAction(set_background_action)
+        
+        remove_background_action = QAction('배경 제거', self)
+        remove_background_action.triggered.connect(self.remove_canvas_background)
+        canvas_menu.addAction(remove_background_action)
     
     def export_html_collage(self):
         """콜라주를 HTML 형식으로 내보냅니다."""
@@ -522,10 +537,12 @@ class MainWindow(QMainWindow):
                 image_service.clear_cache()
                 
                 if app_state_cleared:
+                    # 성공 메시지 표시
                     QMessageBox.information(
-                        self, 
-                        "완료", 
-                        "캐시가 정리되었습니다.\n다음 시작 시 기본 설정으로 시작됩니다."
+                        self,
+                        "캐시 정리 완료",
+                        "앱 캐시가 성공적으로 정리되었습니다.\n"
+                        "다음 실행 시 기본 설정으로 시작됩니다."
                     )
                     print("[MainWindow] 캐시 정리 완료")
                 else:
@@ -534,6 +551,59 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 print(f"[MainWindow] 캐시 정리 중 오류: {e}")
                 QMessageBox.critical(self, "오류", f"캐시 정리 중 오류가 발생했습니다:\n{str(e)}")
+
+    def set_canvas_background(self):
+        """캔버스 배경 이미지를 설정합니다."""
+        # 이미지 파일 선택 다이얼로그
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "배경 이미지 선택",
+            "",
+            "이미지 파일 (*.jpg *.jpeg *.png *.bmp *.gif);;모든 파일 (*.*)"
+        )
+        
+        if file_path:
+            # 배경 서비스에 이미지 설정
+            success = self.background_service.set_background_image(file_path)
+            
+            if success:
+                # 배경 크기에 맞춰 캔버스 크기 조정
+                background_size = self.background_service.get_background_size()
+                if background_size:
+                    width, height = background_size
+                    self.canvas.set_canvas_background_and_resize(
+                        self.background_service.get_background_image(),
+                        width,
+                        height
+                    )
+                    
+                    QMessageBox.information(
+                        self,
+                        "배경 설정 완료",
+                        f"배경 이미지가 설정되었습니다.\n"
+                        f"캔버스 크기: {width}x{height}"
+                    )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "배경 설정 실패",
+                    "배경 이미지를 설정하는데 실패했습니다.\n"
+                    "지원되는 이미지 형식인지 확인해주세요."
+                )
+    
+    def remove_canvas_background(self):
+        """캔버스 배경 이미지를 제거합니다."""
+        # 배경 서비스에서 배경 제거
+        self.background_service.remove_background()
+        
+        # 캔버스에서 배경 제거
+        self.canvas.remove_canvas_background()
+        
+        QMessageBox.information(
+            self,
+            "배경 제거 완료",
+            "캔버스 배경이 기본 흰색으로 설정되었습니다."
+        )
 
 def main():
     app = QApplication(sys.argv)

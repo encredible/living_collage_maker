@@ -73,6 +73,11 @@ class CanvasState:
     height: int
     furniture_items: List[CollageFurnitureState]
     
+    # 배경 설정 🆕
+    background_image_path: str = ''  # 배경 이미지 파일 경로
+    background_image_data: Optional[bytes] = None  # 배경 이미지 데이터 (저장용)
+    has_background: bool = False  # 배경 이미지 존재 여부
+    
     # 작업 메타데이터
     title: str = ''
     description: str = ''
@@ -109,7 +114,8 @@ class AppState:
 │  ├─ ImageService                    │
 │  ├─ PDFService                      │
 │  ├─ HTMLService                     │
-│  └─ AppStateService                 │
+│  ├─ AppStateService                 │
+│  └─ BackgroundService               │
 ├─────────────────────────────────────┤
 │         Data Layer                  │
 │  ├─ SupabaseClient                  │
@@ -169,6 +175,18 @@ class AppStateService:
     def migrate_legacy_cache(self) -> None
 ```
 
+### 6.5 배경 관리 API 🆕
+```python
+class BackgroundService:
+    def set_background_image(self, image_path: str) -> bool
+    def remove_background(self) -> None
+    def get_background_image(self) -> Optional[QPixmap]
+    def get_background_size(self) -> Optional[Tuple[int, int]]
+    def is_background_set(self) -> bool
+    def save_background_data(self, image_path: str) -> bytes
+    def load_background_from_data(self, image_data: bytes) -> QPixmap
+```
+
 ## 📁 파일 시스템 구조
 
 ### 7.1 애플리케이션 구조
@@ -182,7 +200,8 @@ living_collage_maker/
 │   │   ├── image_service.py    # 이미지 관리
 │   │   ├── pdf_service.py      # PDF 생성
 │   │   ├── html_service.py     # HTML 생성
-│   │   └── app_state_service.py # 상태 관리
+│   │   ├── app_state_service.py # 상태 관리
+│   │   └── background_service.py # 배경 관리 🆕
 │   ├── ui/
 │   │   ├── main_window.py      # 메인 윈도우
 │   │   ├── canvas_widget.py    # 캔버스
