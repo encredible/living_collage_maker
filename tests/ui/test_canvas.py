@@ -797,3 +797,332 @@ def test_canvas_area_background_color(canvas_widget):
     
     # autoFillBackground는 명시적으로 True로 설정하지 않았다면 False일 수 있음
     # assert canvas_widget.canvas_area.autoFillBackground() is True, "canvas_area의 autoFillBackground가 True여야 합니다."
+
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
+def test_canvas_multiple_selection_with_ctrl(MockImageService, MockSupabaseClient, canvas_widget, qtbot, mocker):
+    """Ctrl 키를 누른 상태에서 다중 선택이 되는지 테스트합니다."""
+    # 가짜 가구 데이터 생성
+    mock_furniture1 = MagicMock(spec=Furniture)
+    mock_furniture1.id = "item1"
+    mock_furniture1.image_filename = "item1.png"
+    
+    mock_furniture2 = MagicMock(spec=Furniture)
+    mock_furniture2.id = "item2"
+    mock_furniture2.image_filename = "item2.png"
+
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.blue)
+    mock_load_image.return_value = dummy_pixmap
+    
+    # 첫 번째 아이템 생성 및 추가
+    item1 = FurnitureItem(mock_furniture1, parent=canvas_widget.canvas_area)
+    item1.move(10, 10)
+    item1.show()
+    canvas_widget.furniture_items.append(item1)
+    
+    # 두 번째 아이템 생성 및 추가
+    item2 = FurnitureItem(mock_furniture2, parent=canvas_widget.canvas_area)
+    item2.move(150, 150)
+    item2.show()
+    canvas_widget.furniture_items.append(item2)
+    
+    # 첫 번째 아이템 선택 (일반 클릭)
+    canvas_widget.select_furniture_item(item1)
+    assert len(canvas_widget.selected_items) == 1
+    assert item1 in canvas_widget.selected_items
+    assert item1.is_selected is True
+    assert item2.is_selected is False
+    
+    # Ctrl 키를 모킹하고 두 번째 아이템 선택
+    with patch('PyQt6.QtGui.QGuiApplication.keyboardModifiers', 
+               return_value=Qt.KeyboardModifier.ControlModifier):
+        canvas_widget.select_furniture_item(item2)
+    
+    # 두 아이템 모두 선택되었는지 확인
+    assert len(canvas_widget.selected_items) == 2
+    assert item1 in canvas_widget.selected_items
+    assert item2 in canvas_widget.selected_items
+    assert item1.is_selected is True
+    assert item2.is_selected is True
+
+
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
+def test_canvas_multiple_selection_toggle(MockImageService, MockSupabaseClient, canvas_widget, qtbot, mocker):
+    """Ctrl 키로 선택 토글이 정상 작동하는지 테스트합니다."""
+    mock_furniture = MagicMock(spec=Furniture)
+    mock_furniture.id = "toggle_item"
+    mock_furniture.image_filename = "toggle.png"
+
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.green)
+    mock_load_image.return_value = dummy_pixmap
+    
+    item = FurnitureItem(mock_furniture, parent=canvas_widget.canvas_area)
+    item.move(10, 10)
+    item.show()
+    canvas_widget.furniture_items.append(item)
+    
+    # Ctrl 키로 선택
+    with patch('PyQt6.QtGui.QGuiApplication.keyboardModifiers', 
+               return_value=Qt.KeyboardModifier.ControlModifier):
+        canvas_widget.select_furniture_item(item)
+    
+    assert len(canvas_widget.selected_items) == 1
+    assert item.is_selected is True
+    
+    # Ctrl 키로 다시 클릭하여 선택 해제
+    with patch('PyQt6.QtGui.QGuiApplication.keyboardModifiers', 
+               return_value=Qt.KeyboardModifier.ControlModifier):
+        canvas_widget.select_furniture_item(item)
+    
+    assert len(canvas_widget.selected_items) == 0
+    assert item.is_selected is False
+
+
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
+def test_canvas_multiple_selection_clear_on_normal_click(MockImageService, MockSupabaseClient, canvas_widget, qtbot, mocker):
+    """다중 선택된 상태에서 이미 선택된 아이템을 일반 클릭하면 다중 선택이 유지되는지 테스트합니다."""
+    # 가짜 가구 데이터 생성
+    mock_furniture1 = MagicMock(spec=Furniture)
+    mock_furniture1.id = "clear1"
+    mock_furniture1.image_filename = "clear1.png"
+    
+    mock_furniture2 = MagicMock(spec=Furniture)
+    mock_furniture2.id = "clear2"
+    mock_furniture2.image_filename = "clear2.png"
+
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.red)
+    mock_load_image.return_value = dummy_pixmap
+    
+    item1 = FurnitureItem(mock_furniture1, parent=canvas_widget.canvas_area)
+    item1.move(10, 10)
+    item1.show()
+    canvas_widget.furniture_items.append(item1)
+    
+    item2 = FurnitureItem(mock_furniture2, parent=canvas_widget.canvas_area)
+    item2.move(150, 150)
+    item2.show()
+    canvas_widget.furniture_items.append(item2)
+    
+    # 다중 선택 설정
+    canvas_widget.selected_items = [item1, item2]
+    item1.is_selected = True
+    item2.is_selected = True
+    
+    # 일반 클릭으로 첫 번째 아이템 선택 (이미 선택된 아이템)
+    with patch('PyQt6.QtGui.QGuiApplication.keyboardModifiers', 
+               return_value=Qt.KeyboardModifier.NoModifier):
+        canvas_widget.select_furniture_item(item1)
+    
+    # 다중 선택이 유지되어야 함 (새로운 로직)
+    assert len(canvas_widget.selected_items) == 2
+    assert item1 in canvas_widget.selected_items
+    assert item2 in canvas_widget.selected_items
+    assert item1.is_selected is True
+    assert item2.is_selected is True
+
+
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
+def test_canvas_keyboard_delete_multiple_items(MockImageService, MockSupabaseClient, canvas_widget, qtbot, mocker):
+    """Delete 키로 다중 선택된 아이템들이 삭제되는지 테스트합니다."""
+    # 가짜 가구 데이터 생성
+    mock_furniture1 = MagicMock(spec=Furniture)
+    mock_furniture1.id = "delete1"
+    mock_furniture1.name = "Delete Item 1"
+    mock_furniture1.image_filename = "delete1.png"
+    
+    mock_furniture2 = MagicMock(spec=Furniture)
+    mock_furniture2.id = "delete2"
+    mock_furniture2.name = "Delete Item 2"
+    mock_furniture2.image_filename = "delete2.png"
+
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.yellow)
+    mock_load_image.return_value = dummy_pixmap
+    
+    item1 = FurnitureItem(mock_furniture1, parent=canvas_widget.canvas_area)
+    item1.move(10, 10)
+    item1.show()
+    canvas_widget.furniture_items.append(item1)
+    
+    item2 = FurnitureItem(mock_furniture2, parent=canvas_widget.canvas_area)
+    item2.move(150, 150)
+    item2.show()
+    canvas_widget.furniture_items.append(item2)
+    
+    # 다중 선택 설정
+    canvas_widget.selected_items = [item1, item2]
+    item1.is_selected = True
+    item2.is_selected = True
+    
+    # 초기 상태 확인
+    assert len(canvas_widget.furniture_items) == 2
+    assert len(canvas_widget.selected_items) == 2
+    
+    # Delete 키 이벤트 시뮬레이션
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Delete)
+    
+    # 아이템들이 삭제되었는지 확인
+    assert len(canvas_widget.furniture_items) == 0
+    assert len(canvas_widget.selected_items) == 0
+
+
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
+def test_canvas_ctrl_click_empty_space_preserves_selection(MockImageService, MockSupabaseClient, canvas_widget, qtbot, mocker):
+    """Ctrl 키를 누른 상태로 빈 공간 클릭 시 선택이 유지되는지 테스트합니다."""
+    mock_furniture = MagicMock(spec=Furniture)
+    mock_furniture.id = "preserve_item"
+    mock_furniture.image_filename = "preserve.png"
+
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.cyan)
+    mock_load_image.return_value = dummy_pixmap
+    
+    item = FurnitureItem(mock_furniture, parent=canvas_widget.canvas_area)
+    item.move(10, 10)
+    item.show()
+    canvas_widget.furniture_items.append(item)
+    
+    # 아이템 선택
+    canvas_widget.selected_items = [item]
+    item.is_selected = True
+    
+    # Ctrl + 빈 공간 클릭 이벤트 시뮬레이션
+    with patch('PyQt6.QtGui.QGuiApplication.keyboardModifiers', 
+               return_value=Qt.KeyboardModifier.ControlModifier):
+        click_pos = QPoint(250, 250)  # 빈 공간
+        mouse_event = QMouseEvent(
+            QEvent.Type.MouseButtonPress,
+            QPointF(click_pos),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.ControlModifier
+        )
+        canvas_widget.canvas_mouse_press_event(mouse_event)
+    
+    # 선택이 유지되어야 함
+    assert len(canvas_widget.selected_items) == 1
+    assert item.is_selected is True
+
+
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
+def test_canvas_selected_item_property_compatibility(MockImageService, MockSupabaseClient, canvas_widget, qtbot, mocker):
+    """하위 호환성을 위한 selected_item 프로퍼티가 정상 작동하는지 테스트합니다."""
+    mock_furniture = MagicMock(spec=Furniture)
+    mock_furniture.id = "compat_item"
+    mock_furniture.image_filename = "compat.png"
+
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.magenta)
+    mock_load_image.return_value = dummy_pixmap
+    
+    item = FurnitureItem(mock_furniture, parent=canvas_widget.canvas_area)
+    item.move(10, 10)
+    item.show()
+    canvas_widget.furniture_items.append(item)
+    
+    # selected_item setter 테스트
+    canvas_widget.selected_item = item
+    assert canvas_widget.selected_item == item
+    assert len(canvas_widget.selected_items) == 1
+    assert item.is_selected is True
+    
+    # selected_item getter 테스트 (multiple selection)
+    canvas_widget.selected_items = [item]
+    assert canvas_widget.selected_item == item
+    
+    # selected_item None 설정 테스트
+    canvas_widget.selected_item = None
+    assert canvas_widget.selected_item is None
+    assert len(canvas_widget.selected_items) == 0
+    assert item.is_selected is False
+
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
+def test_canvas_multiple_selection_preserve_on_selected_item_click(MockImageService, MockSupabaseClient, canvas_widget, qtbot, mocker):
+    """다중 선택된 상태에서 이미 선택된 아이템 클릭 시 다중 선택이 유지되는지 테스트합니다."""
+    # 가짜 가구 데이터 생성
+    mock_furniture1 = MagicMock(spec=Furniture)
+    mock_furniture1.id = "preserve1"
+    mock_furniture1.image_filename = "preserve1.png"
+    
+    mock_furniture2 = MagicMock(spec=Furniture)
+    mock_furniture2.id = "preserve2"
+    mock_furniture2.image_filename = "preserve2.png"
+    
+    mock_furniture3 = MagicMock(spec=Furniture)
+    mock_furniture3.id = "preserve3"
+    mock_furniture3.image_filename = "preserve3.png"
+
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image')
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.green)
+    mock_load_image.return_value = dummy_pixmap
+    
+    # 세 개의 아이템 생성
+    item1 = FurnitureItem(mock_furniture1, parent=canvas_widget.canvas_area)
+    item1.move(10, 10)
+    item1.show()
+    canvas_widget.furniture_items.append(item1)
+    
+    item2 = FurnitureItem(mock_furniture2, parent=canvas_widget.canvas_area)
+    item2.move(150, 150)
+    item2.show()
+    canvas_widget.furniture_items.append(item2)
+    
+    item3 = FurnitureItem(mock_furniture3, parent=canvas_widget.canvas_area)
+    item3.move(300, 300)
+    item3.show()
+    canvas_widget.furniture_items.append(item3)
+    
+    # 첫 번째와 두 번째 아이템을 다중 선택
+    canvas_widget.select_furniture_item(item1)
+    with patch('PyQt6.QtGui.QGuiApplication.keyboardModifiers', 
+               return_value=Qt.KeyboardModifier.ControlModifier):
+        canvas_widget.select_furniture_item(item2)
+    
+    # 다중 선택 상태 확인
+    assert len(canvas_widget.selected_items) == 2
+    assert item1 in canvas_widget.selected_items
+    assert item2 in canvas_widget.selected_items
+    assert item1.is_selected is True
+    assert item2.is_selected is True
+    assert item3.is_selected is False
+    
+    # 이미 선택된 첫 번째 아이템을 일반 클릭 (Ctrl 없이)
+    with patch('PyQt6.QtGui.QGuiApplication.keyboardModifiers', 
+               return_value=Qt.KeyboardModifier.NoModifier):
+        canvas_widget.select_furniture_item(item1)
+    
+    # 다중 선택이 유지되어야 함
+    assert len(canvas_widget.selected_items) == 2
+    assert item1 in canvas_widget.selected_items
+    assert item2 in canvas_widget.selected_items
+    assert item1.is_selected is True
+    assert item2.is_selected is True
+    assert item3.is_selected is False
+    
+    # 선택되지 않은 세 번째 아이템을 일반 클릭하면 단일 선택으로 변경
+    with patch('PyQt6.QtGui.QGuiApplication.keyboardModifiers', 
+               return_value=Qt.KeyboardModifier.NoModifier):
+        canvas_widget.select_furniture_item(item3)
+    
+    # 세 번째 아이템만 선택되어야 함
+    assert len(canvas_widget.selected_items) == 1
+    assert item3 in canvas_widget.selected_items
+    assert item1.is_selected is False
+    assert item2.is_selected is False
+    assert item3.is_selected is True

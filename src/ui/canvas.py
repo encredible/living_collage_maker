@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (QFileDialog,
                              QMenu,
                              QMessageBox, QVBoxLayout,
                              QWidget)
+from PyQt6.QtGui import QGuiApplication
 
 from src.models.furniture import Furniture
 from src.services.supabase_client import SupabaseClient
@@ -55,7 +56,7 @@ class Canvas(QWidget):
         # 초기 상태 설정
         self.is_new_collage = True
         self.furniture_items = []
-        self.selected_item = None
+        self.selected_items = []  # 다중 선택을 위해 리스트로 변경
         
         # 우클릭 메뉴 활성화 (canvas_area에 대해)
         self.canvas_area.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -63,33 +64,86 @@ class Canvas(QWidget):
         
         # 캔버스 영역 클릭 이벤트 설정 (canvas_area에 대해)
         self.canvas_area.mousePressEvent = self.canvas_mouse_press_event
+        
+        # 키보드 포커스 설정 (키 이벤트 수신을 위해)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     
     def canvas_mouse_press_event(self, event):
-        # 빈 공간 클릭 시 선택 해제
+        # 빈 공간 클릭 시 선택 해제 (Ctrl/Cmd 키를 누르지 않은 경우만)
         if event.button() == Qt.MouseButton.LeftButton:
-            self.deselect_all_items()
+            modifiers = QGuiApplication.keyboardModifiers()
+            if not (modifiers & Qt.KeyboardModifier.ControlModifier):
+                self.deselect_all_items()
+            # 키보드 포커스 설정 (키 이벤트 수신을 위해)
+            self.setFocus()
     
-    # 가구 아이템 선택 처리
+    # 가구 아이템 선택 처리 (다중 선택 지원)
     def select_furniture_item(self, item):
-        # 현재 선택된 아이템이 있으면 선택 해제
-        if self.selected_item is not None:
-            self.selected_item.is_selected = False
-            self.selected_item.update()
+        modifiers = QGuiApplication.keyboardModifiers()
         
-        # 새 아이템 선택
-        self.selected_item = item
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            # Ctrl/Cmd 키를 누른 상태: 토글 선택
+            if item in self.selected_items:
+                # 이미 선택된 아이템이면 선택 해제
+                self.selected_items.remove(item)
+                item.is_selected = False
+            else:
+                # 선택되지 않은 아이템이면 추가 선택
+                self.selected_items.append(item)
+                item.is_selected = True
+        else:
+            # Ctrl/Cmd 키를 누르지 않은 상태
+            if len(self.selected_items) > 1 and item in self.selected_items:
+                # 다중 선택된 상태에서 이미 선택된 아이템을 클릭한 경우
+                # 다중 선택을 유지하고 아무것도 하지 않음
+                pass
+            else:
+                # 단일 선택 또는 선택되지 않은 아이템 클릭: 기존 로직
+                # 기존 선택된 아이템들 모두 해제
+                for selected_item in self.selected_items:
+                    selected_item.is_selected = False
+                    selected_item.update()
+                
+                # 새 아이템만 선택
+                self.selected_items = [item] if item else []
+                if item:
+                    item.is_selected = True
+        
+        # 선택된 아이템들 화면 업데이트
         if item:
-            item.is_selected = True
             item.update()
-        self.update_bottom_panel() # 하단 패널 업데이트 추가
+        
+        self.update_bottom_panel()
     
     # 모든 가구 아이템 선택 해제
     def deselect_all_items(self):
-        if self.selected_item is not None:
-            self.selected_item.is_selected = False
-            self.selected_item.update()
-            self.selected_item = None
-            self.update_bottom_panel() # 하단 패널 업데이트 추가
+        for item in self.selected_items:
+            item.is_selected = False
+            item.update()
+        self.selected_items.clear()
+        self.update_bottom_panel()
+    
+    # 하위 호환성을 위한 프로퍼티
+    @property
+    def selected_item(self):
+        """하위 호환성을 위한 프로퍼티: 첫 번째 선택된 아이템 반환"""
+        return self.selected_items[0] if self.selected_items else None
+    
+    @selected_item.setter
+    def selected_item(self, value):
+        """하위 호환성을 위한 setter: 단일 아이템 선택"""
+        if value is None:
+            self.deselect_all_items()
+        else:
+            # 기존 선택 해제
+            for item in self.selected_items:
+                item.is_selected = False
+                item.update()
+            # 새 아이템 선택
+            self.selected_items = [value]
+            value.is_selected = True
+            value.update()
+            self.update_bottom_panel()
     
     def show_context_menu(self, position):
         """캔버스 영역에서 우클릭했을 때 컨텍스트 메뉴를 표시합니다."""
@@ -100,12 +154,14 @@ class Canvas(QWidget):
         load_action = menu.addAction("불러오기")
         menu.addSeparator()
         new_action = menu.addAction("새 콜라주")
+        resize_action = menu.addAction("캔버스 크기 조절")
         export_action = menu.addAction("내보내기")
         
         # 메뉴 아이템 동작 연결
         save_action.triggered.connect(self.save_collage)
         load_action.triggered.connect(self.load_collage)
         new_action.triggered.connect(self.create_new_collage)
+        resize_action.triggered.connect(self.resize_canvas)
         export_action.triggered.connect(self.export_collage)
         
         # 메뉴 표시
@@ -189,7 +245,7 @@ class Canvas(QWidget):
                 for item in self.furniture_items:
                     item.deleteLater()
                 self.furniture_items.clear()
-                self.selected_item = None
+                self.selected_items.clear()
                 
                 canvas_width = collage_data["canvas"]["width"]
                 canvas_height = collage_data["canvas"]["height"]
@@ -324,7 +380,7 @@ class Canvas(QWidget):
                 item.deleteLater()
             self.furniture_items.clear()
             
-            self.selected_item = None
+            self.selected_items.clear()
             
             # canvas_area 크기 설정 (이때 eventFilter가 호출되어 Canvas 크기도 조절됨)
             self.canvas_area.setFixedSize(width, height)
@@ -482,3 +538,98 @@ class Canvas(QWidget):
                 
             except Exception as e:
                 self._show_critical_message("오류", f"이미지 저장 중 오류가 발생했습니다: {str(e)}")
+
+    def keyPressEvent(self, event):
+        """키보드 이벤트 처리"""
+        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            # Delete 또는 Backspace 키로 선택된 아이템들 삭제
+            if self.selected_items:
+                print(f"[키보드 삭제] 선택된 {len(self.selected_items)}개 아이템 삭제")
+                items_to_delete = self.selected_items.copy()
+                for item in items_to_delete:
+                    if item in self.furniture_items:
+                        self.furniture_items.remove(item)
+                    item.deleteLater()
+                self.selected_items.clear()
+                self.update_bottom_panel()
+                print("[키보드 삭제] 완료")
+        else:
+            super().keyPressEvent(event)
+
+    def resize_canvas(self):
+        """캔버스 크기를 조절합니다."""
+        # 현재 캔버스 크기를 초기값으로 사용
+        current_width = self.canvas_area.width()
+        current_height = self.canvas_area.height()
+        
+        # 캔버스 크기 다이얼로그 표시
+        dialog = CanvasSizeDialog(
+            initial_width=current_width,
+            initial_height=current_height,
+            title="캔버스 크기 조절",
+            parent=self
+        )
+        
+        if dialog.exec():
+            new_width, new_height = dialog.get_canvas_size()
+            
+            # 캔버스 크기 변경
+            self.canvas_area.setFixedSize(new_width, new_height)
+            
+            # 캔버스 밖으로 벗어난 가구들 처리
+            self.handle_furniture_out_of_bounds()
+            
+            # 부모 윈도우에 크기 변경 알림
+            parent_window = self.window()
+            if hasattr(parent_window, 'canvas_size_changed'):
+                parent_window.canvas_size_changed()
+            
+            self._show_information_message(
+                "알림", 
+                f"캔버스 크기가 {new_width}x{new_height}로 변경되었습니다."
+            )
+    
+    def handle_furniture_out_of_bounds(self):
+        """캔버스 영역을 벗어난 가구들을 캔버스 내로 이동시킵니다."""
+        canvas_width = self.canvas_area.width()
+        canvas_height = self.canvas_area.height()
+        
+        moved_items = []
+        
+        for item in self.furniture_items:
+            item_rect = item.geometry()
+            moved = False
+            
+            # 오른쪽 경계 체크
+            if item_rect.right() > canvas_width:
+                new_x = max(0, canvas_width - item.width())
+                item.move(new_x, item.y())
+                moved = True
+            
+            # 아래쪽 경계 체크
+            if item_rect.bottom() > canvas_height:
+                new_y = max(0, canvas_height - item.height())
+                item.move(item.x(), new_y)
+                moved = True
+            
+            # 왼쪽 경계 체크 (음수 좌표)
+            if item.x() < 0:
+                item.move(0, item.y())
+                moved = True
+            
+            # 위쪽 경계 체크 (음수 좌표)
+            if item.y() < 0:
+                item.move(item.x(), 0)
+                moved = True
+            
+            if moved:
+                moved_items.append(item.furniture.name)
+        
+        # 이동된 가구가 있으면 알림
+        if moved_items:
+            if len(moved_items) == 1:
+                message = f"'{moved_items[0]}' 가구가 캔버스 내로 이동되었습니다."
+            else:
+                message = f"{len(moved_items)}개의 가구가 캔버스 내로 이동되었습니다."
+            
+            self._show_information_message("가구 위치 조정", message)

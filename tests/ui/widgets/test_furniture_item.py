@@ -1,9 +1,9 @@
-from unittest.mock import patch, ANY
+from unittest.mock import patch, ANY, MagicMock
 
 import pytest
-from PyQt6.QtCore import QBuffer, QIODevice, QPoint, Qt
-from PyQt6.QtGui import QPixmap, QColor, QContextMenuEvent
-from PyQt6.QtWidgets import QMenu
+from PyQt6.QtCore import QBuffer, QIODevice, QPoint, Qt, QPointF, QEvent
+from PyQt6.QtGui import QPixmap, QColor, QContextMenuEvent, QMouseEvent
+from PyQt6.QtWidgets import QMenu, QWidget
 
 from src.models.furniture import Furniture  # Furniture 모델 임포트
 from src.services.image_service import ImageService  # ImageService 임포트 (모의 대상)
@@ -656,3 +656,419 @@ def test_furniture_item_context_menu_adjust_action(MockImageService, MockSupabas
 
     # show_adjustment_dialog가 호출되었는지 확인
     mock_show_dialog.assert_called_once() 
+
+def test_furniture_item_multiple_selection_movement(qtbot, mocker):
+    """다중 선택된 아이템들이 함께 이동하는지 테스트합니다."""
+    # Mock 설정
+    mock_furniture1 = MagicMock(spec=Furniture)
+    mock_furniture1.id = "multi_move1"
+    mock_furniture1.image_filename = "multi1.png"
+    
+    mock_furniture2 = MagicMock(spec=Furniture)
+    mock_furniture2.id = "multi_move2"
+    mock_furniture2.image_filename = "multi2.png"
+    
+    # 부모 위젯
+    parent_widget = QWidget()
+    qtbot.addWidget(parent_widget)
+    
+    # 이미지 로딩 모킹
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.blue)
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image', return_value=dummy_pixmap)
+    
+    # FurnitureItem 생성
+    item1 = FurnitureItem(mock_furniture1, parent_widget)
+    item1.move(100, 100)
+    item1.show()
+    
+    item2 = FurnitureItem(mock_furniture2, parent_widget)
+    item2.move(200, 200)
+    item2.show()
+    
+    # Canvas 모킹 - parent() 체인을 모킹
+    mock_canvas_area = MagicMock()
+    mock_canvas = MagicMock()
+    mock_canvas.selected_items = [item1, item2]
+    mock_canvas_area.parent.return_value = mock_canvas
+    
+    # parent() 메서드 오버라이드
+    item1.parent = lambda: mock_canvas_area
+    item2.parent = lambda: mock_canvas_area
+    
+    # 드래그 시작
+    start_pos = QPoint(50, 50)
+    item1.old_pos = start_pos
+    
+    # move 메서드 추적
+    item1_moves = []
+    item2_moves = []
+    
+    original_move1 = item1.move
+    original_move2 = item2.move
+    
+    def track_item1_move(pos):
+        item1_moves.append(pos)
+        return original_move1(pos)
+    
+    def track_item2_move(pos):
+        item2_moves.append(pos)
+        return original_move2(pos)
+    
+    item1.move = track_item1_move
+    item2.move = track_item2_move
+    
+    # 마우스 이동 이벤트 시뮬레이션
+    move_delta = QPoint(20, 30)
+    end_pos = start_pos + move_delta
+    
+    move_event = QMouseEvent(
+        QEvent.Type.MouseMove,
+        QPointF(end_pos),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier
+    )
+    
+    # 이동 실행
+    item1.mouseMoveEvent(move_event)
+    
+    # 두 아이템 모두 이동했는지 확인
+    assert len(item1_moves) > 0, "item1이 이동해야 합니다"
+    assert len(item2_moves) > 0, "item2도 함께 이동해야 합니다"
+
+
+def test_furniture_item_single_movement_fallback(qtbot, mocker):
+    """Canvas를 찾을 수 없는 경우 단일 아이템만 이동하는지 테스트합니다."""
+    mock_furniture = MagicMock(spec=Furniture)
+    mock_furniture.id = "single_move"
+    mock_furniture.image_filename = "single.png"
+    
+    parent_widget = QWidget()
+    qtbot.addWidget(parent_widget)
+    
+    # 이미지 로딩 모킹
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.red)
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image', return_value=dummy_pixmap)
+    
+    # FurnitureItem 생성 (Canvas 없이)
+    item = FurnitureItem(mock_furniture, parent_widget)
+    initial_pos = QPoint(100, 100)
+    item.move(initial_pos)
+    item.show()
+    
+    # 드래그 시작
+    start_pos = QPoint(50, 50)
+    item.old_pos = start_pos
+    
+    # move 메서드 추적
+    move_calls = []
+    original_move = item.move
+    
+    def track_move(pos):
+        move_calls.append(pos)
+        return original_move(pos)
+    
+    item.move = track_move
+    
+    # 마우스 이동 이벤트
+    move_delta = QPoint(20, 30)
+    end_pos = start_pos + move_delta
+    
+    move_event = QMouseEvent(
+        QEvent.Type.MouseMove,
+        QPointF(end_pos),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier
+    )
+    
+    # 이동 실행
+    item.mouseMoveEvent(move_event)
+    
+    # move가 호출되었는지 확인
+    assert len(move_calls) > 0, "아이템이 이동해야 합니다" 
+
+def test_furniture_item_no_movement_with_ctrl_key(qtbot, mocker):
+    """컨트롤 키를 누른 상태에서는 드래그 이동이 방지되는지 테스트합니다."""
+    mock_furniture = MagicMock(spec=Furniture)
+    mock_furniture.id = "ctrl_no_move"
+    mock_furniture.image_filename = "ctrl_test.png"
+    
+    parent_widget = QWidget()
+    qtbot.addWidget(parent_widget)
+    
+    # 이미지 로딩 모킹
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.blue)
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image', return_value=dummy_pixmap)
+    
+    # FurnitureItem 생성
+    item = FurnitureItem(mock_furniture, parent_widget)
+    initial_pos = QPoint(100, 100)
+    item.move(initial_pos)
+    item.show()
+    
+    # 드래그 시작
+    start_pos = QPoint(50, 50)
+    item.old_pos = start_pos
+    
+    # 현재 위치 저장
+    position_before_drag = item.pos()
+    
+    # 컨트롤 키를 누른 상태에서 마우스 이동 이벤트
+    move_delta = QPoint(20, 30)
+    end_pos = start_pos + move_delta
+    
+    with patch('PyQt6.QtGui.QGuiApplication.keyboardModifiers', 
+               return_value=Qt.KeyboardModifier.ControlModifier):
+        move_event = QMouseEvent(
+            QEvent.Type.MouseMove,
+            QPointF(end_pos),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.ControlModifier
+        )
+        
+        # 이동 실행
+        item.mouseMoveEvent(move_event)
+    
+    # 위치가 변경되지 않았는지 확인
+    position_after_drag = item.pos()
+    assert position_before_drag == position_after_drag, "컨트롤 키를 누른 상태에서는 드래그 이동이 방지되어야 합니다"
+
+
+def test_furniture_item_bounds_check_movement(qtbot, mocker):
+    """캔버스 영역을 벗어나지 않도록 이동이 제한되는지 테스트합니다."""
+    mock_furniture = MagicMock(spec=Furniture)
+    mock_furniture.id = "bounds_test"
+    mock_furniture.image_filename = "bounds.png"
+    
+    # 캔버스 영역 크기 설정
+    canvas_area = QWidget()
+    canvas_area.setFixedSize(300, 200)  # 작은 캔버스 영역
+    qtbot.addWidget(canvas_area)
+    
+    # 이미지 로딩 모킹
+    dummy_pixmap = QPixmap(50, 50)
+    dummy_pixmap.fill(Qt.GlobalColor.green)
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image', return_value=dummy_pixmap)
+    
+    # FurnitureItem 생성 (캔버스 영역 경계 근처에 배치)
+    item = FurnitureItem(mock_furniture, canvas_area)
+    item.setFixedSize(50, 50)
+    item.move(250, 10)  # 오른쪽 경계 근처에 배치
+    item.show()
+    
+    # Canvas 모킹
+    mock_canvas = MagicMock()
+    mock_canvas.selected_items = [item]
+    canvas_area.parent = lambda: mock_canvas
+    
+    # 드래그 시작
+    start_pos = QPoint(25, 25)  # 아이템 중앙
+    item.old_pos = start_pos
+    
+    # 오른쪽으로 많이 이동하려고 시도 (경계를 벗어날 정도로)
+    large_delta = QPoint(100, 0)  # 오른쪽으로 100px 이동 시도
+    end_pos = start_pos + large_delta
+    
+    move_event = QMouseEvent(
+        QEvent.Type.MouseMove,
+        QPointF(end_pos),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier
+    )
+    
+    # 이동 실행
+    item.mouseMoveEvent(move_event)
+    
+    # 경계를 벗어나지 않았는지 확인
+    item_right = item.pos().x() + item.width()
+    canvas_right = canvas_area.width()
+    
+    assert item_right <= canvas_right, f"아이템이 캔버스 오른쪽 경계를 벗어남: {item_right} > {canvas_right}" 
+
+def test_furniture_item_resize_bounds_check(qtbot, mocker):
+    """리사이즈 시 캔버스 영역을 벗어나지 않도록 크기가 제한되는지 테스트합니다."""
+    mock_furniture = MagicMock(spec=Furniture)
+    mock_furniture.id = "resize_bounds_test"
+    mock_furniture.image_filename = "resize_bounds.png"
+    
+    # 작은 캔버스 영역 설정
+    canvas_area = QWidget()
+    canvas_area.setFixedSize(400, 300)  # 작은 캔버스
+    qtbot.addWidget(canvas_area)
+    
+    # 이미지 로딩 모킹
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.red)
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image', return_value=dummy_pixmap)
+    
+    # Canvas 모킹
+    mock_canvas = MagicMock()
+    canvas_area.parent = lambda: mock_canvas
+    
+    # FurnitureItem 생성 (캔버스 오른쪽 경계 근처에 배치)
+    item = FurnitureItem(mock_furniture, canvas_area)
+    item.setFixedSize(100, 100)
+    item.move(320, 150)  # 오른쪽 경계 근처에 배치 (400-320=80만큼 공간 남음)
+    item.show()
+    
+    # 선택 상태로 설정
+    mock_canvas.select_furniture_item = MagicMock()
+    mock_canvas.selected_items = [item]
+    item.is_selected = True
+    
+    # 리사이즈 시작 설정
+    item.is_resizing = True
+    item.original_size_on_resize = item.size()
+    item.resize_mouse_start_pos = QPoint(10, 10)  # 리사이즈 핸들 시작 위치
+    item.maintain_aspect_ratio_on_press = False
+    
+    # 크게 리사이즈하려고 시도 (캔버스를 벗어날 정도로)
+    large_delta = QPoint(200, 150)  # 매우 큰 증가량
+    end_pos = item.resize_mouse_start_pos + large_delta
+    
+    resize_event = QMouseEvent(
+        QEvent.Type.MouseMove,
+        QPointF(end_pos),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier
+    )
+    
+    # 리사이즈 실행
+    item.mouseMoveEvent(resize_event)
+    
+    # 캔버스 경계를 벗어나지 않았는지 확인
+    item_right = item.pos().x() + item.width()
+    item_bottom = item.pos().y() + item.height()
+    canvas_width = canvas_area.width()
+    canvas_height = canvas_area.height()
+    
+    assert item_right <= canvas_width, f"아이템이 캔버스 오른쪽 경계를 벗어남: {item_right} > {canvas_width}"
+    assert item_bottom <= canvas_height, f"아이템이 캔버스 아래쪽 경계를 벗어남: {item_bottom} > {canvas_height}"
+    
+    # 캔버스 경계 제한으로 인해 너비가 80 (=400-320)으로 제한되었는지 확인
+    expected_max_width = canvas_width - item.pos().x()  # 400 - 320 = 80
+    assert item.width() == expected_max_width, f"너비가 캔버스 경계에 맞게 제한되어야 함: {item.width()} != {expected_max_width}"
+    
+    # 높이는 충분한 공간이 있으므로 리사이즈된 값이어야 함
+    assert item.height() > 100, "높이는 리사이즈되어 증가해야 함"
+
+
+def test_furniture_item_resize_bounds_check_with_aspect_ratio(qtbot, mocker):
+    """비율 유지 리사이즈 시에도 캔버스 경계를 벗어나지 않는지 테스트합니다."""
+    mock_furniture = MagicMock(spec=Furniture)
+    mock_furniture.id = "resize_aspect_bounds_test"
+    mock_furniture.image_filename = "resize_aspect_bounds.png"
+    
+    # 작은 캔버스 영역 설정
+    canvas_area = QWidget()
+    canvas_area.setFixedSize(350, 250)
+    qtbot.addWidget(canvas_area)
+    
+    # 이미지 로딩 모킹 (정사각형 이미지)
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.blue)
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image', return_value=dummy_pixmap)
+    
+    # Canvas 모킹
+    mock_canvas = MagicMock()
+    canvas_area.parent = lambda: mock_canvas
+    
+    # FurnitureItem 생성
+    item = FurnitureItem(mock_furniture, canvas_area)
+    item.setFixedSize(100, 100)
+    item.move(200, 100)  # 중앙 근처에 배치
+    item.original_ratio = 1.0  # 정사각형 비율
+    item.show()
+    
+    # 선택 상태로 설정
+    item.is_selected = True
+    
+    # 비율 유지 리사이즈 시작 설정
+    item.is_resizing = True
+    item.original_size_on_resize = item.size()
+    item.resize_mouse_start_pos = QPoint(10, 10)
+    item.maintain_aspect_ratio_on_press = True  # 비율 유지 모드
+    
+    # 크게 리사이즈하려고 시도
+    large_delta = QPoint(300, 200)  # 캔버스를 벗어날 정도로 큰 증가량
+    end_pos = item.resize_mouse_start_pos + large_delta
+    
+    resize_event = QMouseEvent(
+        QEvent.Type.MouseMove,
+        QPointF(end_pos),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.ShiftModifier
+    )
+    
+    # 리사이즈 실행
+    item.mouseMoveEvent(resize_event)
+    
+    # 캔버스 경계를 벗어나지 않았는지 확인
+    item_right = item.pos().x() + item.width()
+    item_bottom = item.pos().y() + item.height()
+    canvas_width = canvas_area.width()
+    canvas_height = canvas_area.height()
+    
+    assert item_right <= canvas_width, f"아이템이 캔버스 오른쪽 경계를 벗어남: {item_right} > {canvas_width}"
+    assert item_bottom <= canvas_height, f"아이템이 캔버스 아래쪽 경계를 벗어남: {item_bottom} > {canvas_height}"
+    
+    # 비율이 유지되었는지 확인 (정사각형)
+    aspect_ratio = item.width() / item.height()
+    assert abs(aspect_ratio - 1.0) < 0.1, f"정사각형 비율이 유지되지 않음: {aspect_ratio}"
+
+
+def test_furniture_item_no_movement_with_ctrl_key(qtbot, mocker):
+    """컨트롤 키를 누른 상태에서는 드래그 이동이 방지되는지 테스트합니다."""
+    mock_furniture = MagicMock(spec=Furniture)
+    mock_furniture.id = "ctrl_no_move"
+    mock_furniture.image_filename = "ctrl_test.png"
+    
+    parent_widget = QWidget()
+    qtbot.addWidget(parent_widget)
+    
+    # 이미지 로딩 모킹
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(Qt.GlobalColor.blue)
+    mock_load_image = mocker.patch.object(FurnitureItem, 'load_image', return_value=dummy_pixmap)
+    
+    # FurnitureItem 생성
+    item = FurnitureItem(mock_furniture, parent_widget)
+    initial_pos = QPoint(100, 100)
+    item.move(initial_pos)
+    item.show()
+    
+    # 드래그 시작
+    start_pos = QPoint(50, 50)
+    item.old_pos = start_pos
+    
+    # 현재 위치 저장
+    position_before_drag = item.pos()
+    
+    # 컨트롤 키를 누른 상태에서 마우스 이동 이벤트
+    move_delta = QPoint(20, 30)
+    end_pos = start_pos + move_delta
+    
+    with patch('PyQt6.QtGui.QGuiApplication.keyboardModifiers', 
+               return_value=Qt.KeyboardModifier.ControlModifier):
+        move_event = QMouseEvent(
+            QEvent.Type.MouseMove,
+            QPointF(end_pos),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.ControlModifier
+        )
+        
+        # 이동 실행
+        item.mouseMoveEvent(move_event)
+    
+    # 위치가 변경되지 않았는지 확인
+    position_after_drag = item.pos()
+    assert position_before_drag == position_after_drag, "컨트롤 키를 누른 상태에서는 드래그 이동이 방지되어야 합니다" 
