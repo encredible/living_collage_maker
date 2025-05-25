@@ -1467,6 +1467,9 @@ def test_canvas_z_order_with_undo_redo(MockImageService, MockSupabaseClient, qtb
     furniture2_data = mock_furniture_data_for_canvas.copy()
     furniture2_data["id"] = "test-item-2"
     
+    # Undo 시 get_furniture_list에서 반환할 데이터 설정
+    mock_supabase_instance.get_furniture_list.return_value = [furniture1_data, furniture2_data]
+    
     furniture1 = FurnitureItem(Furniture(**furniture1_data), parent=canvas_widget.canvas_area)
     furniture2 = FurnitureItem(Furniture(**furniture2_data), parent=canvas_widget.canvas_area)
     
