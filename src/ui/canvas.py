@@ -1245,11 +1245,55 @@ class Canvas(QWidget):
     def keyPressEvent(self, event):
         """키보드 이벤트를 처리합니다."""
         if event.key() == Qt.Key.Key_Delete:
-            # Delete 키: 선택된 아이템들 삭제
+            # 선택된 아이템들 삭제
             if self.selected_items:
                 items_to_remove = self.selected_items.copy()
                 for item in items_to_remove:
                     self.remove_furniture_item(item)
-                print(f"[Canvas] Delete 키로 {len(items_to_remove)}개 아이템 삭제됨")
+        elif event.key() == Qt.Key.Key_Escape:
+            # 모든 선택 해제
+            self.deselect_all_items()
         else:
             super().keyPressEvent(event)
+
+    # Z-order 관련 메서드들
+    def bring_to_front(self, item):
+        """가구 아이템을 맨 앞으로 가져옵니다."""
+        if item in self.furniture_items:
+            # 상태 저장 (Undo/Redo용)
+            self._save_state()
+            
+            # 리스트에서 제거 후 맨 뒤에 추가 (맨 앞으로)
+            self.furniture_items.remove(item)
+            self.furniture_items.append(item)
+            
+            # Qt 위젯 계층에서도 맨 앞으로
+            item.raise_()
+            
+            # 하단 패널과 번호표 업데이트
+            self.update_bottom_panel()
+            self.update_number_labels()
+            
+            # Undo/Redo 액션 업데이트
+            self._save_state_and_update_actions()
+
+    def send_to_back(self, item):
+        """가구 아이템을 맨 뒤로 보냅니다."""
+        if item in self.furniture_items:
+            # 상태 저장 (Undo/Redo용)
+            self._save_state()
+            
+            # 리스트에서 제거 후 맨 앞에 추가 (맨 뒤로)
+            self.furniture_items.remove(item)
+            self.furniture_items.insert(0, item)
+            
+            # Qt 위젯 계층에서도 맨 뒤로
+            item.lower()
+            
+            # 하단 패널과 번호표 업데이트
+            self.update_bottom_panel()
+            self.update_number_labels()
+            
+            # Undo/Redo 액션 업데이트
+            self._save_state_and_update_actions()
+

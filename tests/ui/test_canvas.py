@@ -1365,3 +1365,128 @@ def test_canvas_click_on_furniture_vs_rectangle_selection(MockImageService, Mock
     # 영역 선택 모드가 종료되어야 함
     assert canvas_widget.is_selecting is False
     assert canvas_widget.rubber_band.isVisible() is False
+
+def test_canvas_ctrl_click_empty_space_preserves_selection(qtbot, canvas_widget, mock_furniture_data_for_canvas):
+    """Ctrl+클릭으로 빈 공간을 클릭해도 기존 선택이 유지되는지 테스트"""
+    # 두 개의 가구 아이템 생성
+    furniture1_data = mock_furniture_data_for_canvas.copy()
+    furniture1_data["id"] = "test-item-1"
+    furniture2_data = mock_furniture_data_for_canvas.copy()
+    furniture2_data["id"] = "test-item-2"
+    
+    furniture1 = FurnitureItem(Furniture(**furniture1_data), parent=canvas_widget.canvas_area)
+    furniture2 = FurnitureItem(Furniture(**furniture2_data), parent=canvas_widget.canvas_area)
+    
+    # Canvas에 추가
+    canvas_widget.furniture_items = [furniture1, furniture2]
+    
+    # 두 가구 모두 선택
+    canvas_widget.selected_items = [furniture1, furniture2]
+    furniture1.is_selected = True
+    furniture2.is_selected = True
+    
+    # Ctrl+클릭으로 빈 공간 클릭 시뮬레이션
+    with patch('PyQt6.QtGui.QGuiApplication.keyboardModifiers', return_value=Qt.KeyboardModifier.ControlModifier):
+        event = MagicMock()
+        event.button.return_value = Qt.MouseButton.LeftButton
+        event.pos.return_value = QPoint(500, 500)  # 빈 공간
+        
+        canvas_widget.canvas_mouse_press_event(event)
+    
+    # 기존 선택이 유지되어야 함
+    assert len(canvas_widget.selected_items) == 2
+    assert furniture1 in canvas_widget.selected_items
+    assert furniture2 in canvas_widget.selected_items
+
+def test_canvas_z_order_bring_to_front(qtbot, canvas_widget, mock_furniture_data_for_canvas):
+    """가구를 맨 앞으로 가져오기 기능 테스트"""
+    # 두 개의 가구 아이템 생성
+    furniture1_data = mock_furniture_data_for_canvas.copy()
+    furniture1_data["id"] = "test-item-1"
+    furniture2_data = mock_furniture_data_for_canvas.copy()
+    furniture2_data["id"] = "test-item-2"
+    
+    furniture1 = FurnitureItem(Furniture(**furniture1_data), parent=canvas_widget.canvas_area)
+    furniture2 = FurnitureItem(Furniture(**furniture2_data), parent=canvas_widget.canvas_area)
+    
+    # Canvas에 추가
+    canvas_widget.furniture_items = [furniture1, furniture2]
+    
+    # 초기 순서: furniture1이 뒤, furniture2가 앞
+    assert canvas_widget.furniture_items.index(furniture1) < canvas_widget.furniture_items.index(furniture2)
+    
+    # furniture1을 맨 앞으로 가져오기
+    canvas_widget.bring_to_front(furniture1)
+    
+    # furniture1이 맨 앞(리스트의 마지막)에 있어야 함
+    assert canvas_widget.furniture_items[-1] == furniture1
+    assert canvas_widget.furniture_items.index(furniture1) > canvas_widget.furniture_items.index(furniture2)
+
+def test_canvas_z_order_send_to_back(qtbot, canvas_widget, mock_furniture_data_for_canvas):
+    """가구를 맨 뒤로 보내기 기능 테스트"""
+    # 두 개의 가구 아이템 생성
+    furniture1_data = mock_furniture_data_for_canvas.copy()
+    furniture1_data["id"] = "test-item-1"
+    furniture2_data = mock_furniture_data_for_canvas.copy()
+    furniture2_data["id"] = "test-item-2"
+    
+    furniture1 = FurnitureItem(Furniture(**furniture1_data), parent=canvas_widget.canvas_area)
+    furniture2 = FurnitureItem(Furniture(**furniture2_data), parent=canvas_widget.canvas_area)
+    
+    # Canvas에 추가
+    canvas_widget.furniture_items = [furniture1, furniture2]
+    
+    # 초기 순서: furniture1이 뒤, furniture2가 앞
+    assert canvas_widget.furniture_items.index(furniture1) < canvas_widget.furniture_items.index(furniture2)
+    
+    # furniture2를 맨 뒤로 보내기
+    canvas_widget.send_to_back(furniture2)
+    
+    # furniture2가 맨 뒤(리스트의 첫 번째)에 있어야 함
+    assert canvas_widget.furniture_items[0] == furniture2
+    assert canvas_widget.furniture_items.index(furniture2) < canvas_widget.furniture_items.index(furniture1)
+
+
+
+@patch('src.ui.canvas.SupabaseClient')
+@patch('src.services.image_service.ImageService')
+def test_canvas_z_order_with_undo_redo(MockImageService, MockSupabaseClient, qtbot, canvas_widget, mock_furniture_data_for_canvas, mocker):
+    """z-order 변경이 Undo/Redo와 함께 작동하는지 테스트"""
+    # Mock 설정
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_image_service_instance = MockImageService.return_value
+    mock_supabase_instance._image_cache = mocker.MagicMock()
+    
+    # 두 개의 가구 아이템 생성
+    furniture1_data = mock_furniture_data_for_canvas.copy()
+    furniture1_data["id"] = "test-item-1"
+    furniture2_data = mock_furniture_data_for_canvas.copy()
+    furniture2_data["id"] = "test-item-2"
+    
+    # 가구 데이터베이스 조회 Mock 설정
+    mock_supabase_instance.get_furniture_list.return_value = [furniture1_data, furniture2_data]
+    
+    furniture1 = FurnitureItem(Furniture(**furniture1_data), parent=canvas_widget.canvas_area)
+    furniture2 = FurnitureItem(Furniture(**furniture2_data), parent=canvas_widget.canvas_area)
+    
+    # Canvas에 추가
+    canvas_widget.furniture_items = [furniture1, furniture2]
+    
+    # 초기 순서 확인 (ID로 확인)
+    initial_order_ids = [item.furniture.id for item in canvas_widget.furniture_items]
+    assert initial_order_ids == ["test-item-1", "test-item-2"]
+    
+    # furniture1을 맨 앞으로 가져오기
+    canvas_widget.bring_to_front(furniture1)
+    
+    # 순서가 변경되었는지 확인 (ID로 확인)
+    changed_order_ids = [item.furniture.id for item in canvas_widget.furniture_items]
+    assert changed_order_ids == ["test-item-2", "test-item-1"]
+    
+    # Undo 실행
+    canvas_widget.undo()
+    
+    # 원래 순서로 복원되었는지 확인 (ID로 확인)
+    assert len(canvas_widget.furniture_items) == 2
+    restored_order_ids = [item.furniture.id for item in canvas_widget.furniture_items]
+    assert restored_order_ids == ["test-item-1", "test-item-2"]

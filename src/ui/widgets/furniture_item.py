@@ -573,8 +573,6 @@ class FurnitureItem(QWidget):
         # --- Z-order actions ---
         bring_to_front_action = menu.addAction("맨 앞으로 가져오기")
         send_to_back_action = menu.addAction("맨 뒤로 보내기")
-        bring_forward_action = menu.addAction("앞으로 가져오기")
-        send_backward_action = menu.addAction("뒤로 보내기")
         # ---
 
         action = menu.exec(event.globalPos())
@@ -591,17 +589,11 @@ class FurnitureItem(QWidget):
         elif action == adjust_action:
             self.show_adjustment_dialog()
         elif action == bring_to_front_action:
-            # Implement bring to front logic
-            pass
+            if canvas_widget and hasattr(canvas_widget, 'bring_to_front'):
+                canvas_widget.bring_to_front(self)
         elif action == send_to_back_action:
-            # Implement send to back logic
-            pass
-        elif action == bring_forward_action:
-            # Implement bring forward logic
-            pass
-        elif action == send_backward_action:
-            # Implement send backward logic
-            pass
+            if canvas_widget and hasattr(canvas_widget, 'send_to_back'):
+                canvas_widget.send_to_back(self)
 
     def flip_item_and_emit_signal(self):
         """아이템을 좌우 반전시키고 item_changed 시그널을 발생시킵니다."""
