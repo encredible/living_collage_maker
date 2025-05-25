@@ -902,8 +902,7 @@ class Canvas(QWidget):
                 item.show()
                 self.furniture_items.append(item)
                 self.select_furniture_item(item)
-                # 하단 패널 업데이트 (번호표 포함)
-                self.update_bottom_panel()
+                # select_furniture_item에서 이미 update_bottom_panel을 호출하므로 여기서는 제거
                 self._save_state_and_update_actions() # 여기서 한 번 저장 (아이템 추가 작업 자체)
                 event.acceptProposedAction()
         except Exception as e:
@@ -930,6 +929,14 @@ class Canvas(QWidget):
                 self.update_number_labels()
                 return
             parent_widget = parent_widget.parent()
+        
+        # 부모 위젯에서 찾지 못한 경우 window()에서 찾기
+        main_window = self.window()
+        if main_window and hasattr(main_window, 'bottom_panel'):
+            main_window.bottom_panel.update_panel(self.furniture_items)
+            # 번호표 업데이트
+            self.update_number_labels()
+            return
         
         print("[Canvas] 하단 패널을 찾을 수 없습니다.")
     
@@ -1234,3 +1241,15 @@ class Canvas(QWidget):
                     
             except Exception as e:
                 self._show_critical_message("오류", f"콜라주 내보내기 중 오류가 발생했습니다: {str(e)}")
+
+    def keyPressEvent(self, event):
+        """키보드 이벤트를 처리합니다."""
+        if event.key() == Qt.Key.Key_Delete:
+            # Delete 키: 선택된 아이템들 삭제
+            if self.selected_items:
+                items_to_remove = self.selected_items.copy()
+                for item in items_to_remove:
+                    self.remove_furniture_item(item)
+                print(f"[Canvas] Delete 키로 {len(items_to_remove)}개 아이템 삭제됨")
+        else:
+            super().keyPressEvent(event)
