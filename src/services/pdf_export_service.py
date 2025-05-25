@@ -4,8 +4,8 @@ from datetime import datetime
 from io import BytesIO
 from typing import List
 
-from PyQt6.QtCore import QObject, pyqtSignal, QBuffer, QIODevice
-from PyQt6.QtGui import QImageWriter
+from PyQt6.QtCore import QObject, pyqtSignal
+# QBuffer, QIODevice, QImageWriter are imported locally in _get_collage_image_data if still needed
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from src.ui.canvas import FurnitureItem

@@ -794,13 +794,36 @@ class Canvas(QWidget):
         
         # 모든 가구 아이템 그리기
         for item in self.furniture_items:
-            # 아이템의 위치를 캔버스 영역 기준으로 변환
+            # 아이템의 위치와 크기
             pos = item.pos()
-            painter.drawPixmap(pos, item.pixmap.scaled(
-                item.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            ))
+            widget_size = item.size() # The QWidget's current size on canvas
+
+            if item.pixmap is None or item.pixmap.isNull(): # Safety check
+                continue
+
+            final_pixmap_to_draw = None
+            draw_pos_x = pos.x()
+            draw_pos_y = pos.y()
+
+            if hasattr(item, 'maintain_aspect_ratio') and not item.maintain_aspect_ratio:
+                # User has stretched/squashed the item, ignore original pixmap aspect ratio
+                final_pixmap_to_draw = item.pixmap.scaled(
+                    widget_size,
+                    Qt.AspectRatioMode.IgnoreAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+            else:
+                # Default or user wants to maintain original pixmap aspect ratio
+                final_pixmap_to_draw = item.pixmap.scaled(
+                    widget_size,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                # Center the pixmap if KeepAspectRatio mode doesn't fill the widget_size
+                draw_pos_x += (widget_size.width() - final_pixmap_to_draw.width()) // 2
+                draw_pos_y += (widget_size.height() - final_pixmap_to_draw.height()) // 2
+            
+            painter.drawPixmap(draw_pos_x, draw_pos_y, final_pixmap_to_draw)
         
         # 번호표 그리기 (CanvasArea의 메서드 활용)
         self._draw_number_labels_on_image(painter)
