@@ -1354,6 +1354,7 @@ def furniture_item(qtbot, sample_furniture, monkeypatch):
     parent = QWidget()
     qtbot.addWidget(parent)  # 부모를 먼저 qtbot에 등록
     item = FurnitureItem(sample_furniture, parent)
+    qtbot.addWidget(item)  # FurnitureItem도 qtbot에 등록
     item.show()  # 위젯을 표시
     return item
 
@@ -1452,3 +1453,105 @@ def test_furniture_item_context_menu_z_order_actions(qtbot, mock_furniture_item,
             expected_method.assert_called_once_with(furniture_item)
             print(f"✓ {method_name} 메서드 호출 확인됨")
             expected_method.reset_mock()  # 다음 테스트를 위해 리셋
+
+def test_furniture_item_number_label_widget_creation(furniture_item):
+    """번호표 위젯이 올바르게 생성되는지 테스트합니다."""
+    assert hasattr(furniture_item, 'number_label_widget')
+    assert furniture_item.number_label_widget is not None
+    # 위젯의 기본 속성 확인
+    assert furniture_item.number_label_widget.number == 0
+    assert furniture_item.number_label_widget.label_size == 18
+
+def test_furniture_item_number_label_widget_visibility(furniture_item):
+    """번호표 위젯의 표시/숨김 기능을 테스트합니다."""
+    # 초기 상태: 번호가 0이므로 숨김
+    assert not furniture_item.number_label_widget.isVisible()
+    
+    # 번호 설정 시 표시
+    furniture_item.set_number_label(1)
+    assert furniture_item.number_label_widget.isVisible()
+    
+    # 번호를 0으로 설정 시 숨김
+    furniture_item.set_number_label(0)
+    assert not furniture_item.number_label_widget.isVisible()
+
+def test_furniture_item_number_label_widget_position(furniture_item):
+    """번호표 위젯의 위치 설정/조회 기능을 테스트합니다."""
+    from PyQt6.QtCore import QPoint
+    
+    # 기본 위치 확인
+    default_pos = furniture_item.get_number_label_position()
+    assert default_pos == QPoint(5, 5)
+    
+    # 위치 변경
+    new_pos = QPoint(20, 30)
+    furniture_item.set_number_label_position(new_pos)
+    assert furniture_item.get_number_label_position() == new_pos
+
+def test_furniture_item_number_label_widget_boundary_check(furniture_item):
+    """번호표 위젯이 가구 경계를 벗어나지 않는지 테스트합니다."""
+    from PyQt6.QtCore import QPoint
+    
+    # 가구 크기보다 큰 위치 설정 시도
+    furniture_width = furniture_item.width()
+    furniture_height = furniture_item.height()
+    label_size = furniture_item.number_label_widget.width()
+    
+    # 경계를 벗어나는 위치 설정
+    out_of_bounds_pos = QPoint(furniture_width + 10, furniture_height + 10)
+    furniture_item.set_number_label_position(out_of_bounds_pos)
+    
+    # 실제 위치는 경계 내로 제한되어야 함
+    actual_pos = furniture_item.get_number_label_position()
+    assert actual_pos.x() <= furniture_width - label_size
+    assert actual_pos.y() <= furniture_height - label_size
+
+def test_furniture_item_number_label_widget_drag_functionality(furniture_item, qtbot):
+    """번호표 위젯의 드래그 기능을 테스트합니다."""
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtGui import QMouseEvent
+    
+    # 번호 설정하여 위젯 표시
+    furniture_item.set_number_label(1)
+    label_widget = furniture_item.number_label_widget
+    
+    # 초기 위치 저장
+    initial_pos = label_widget.pos()
+    
+    # 마우스 드래그 시뮬레이션
+    start_point = QPoint(5, 5)
+    end_point = QPoint(15, 15)
+    
+    # 마우스 누르기
+    press_event = QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress,
+        start_point,
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier
+    )
+    label_widget.mousePressEvent(press_event)
+    
+    # 마우스 이동
+    move_event = QMouseEvent(
+        QMouseEvent.Type.MouseMove,
+        end_point,
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier
+    )
+    label_widget.mouseMoveEvent(move_event)
+    
+    # 마우스 놓기
+    release_event = QMouseEvent(
+        QMouseEvent.Type.MouseButtonRelease,
+        end_point,
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier
+    )
+    label_widget.mouseReleaseEvent(release_event)
+    
+    # 위치가 변경되었는지 확인
+    final_pos = label_widget.pos()
+    assert final_pos != initial_pos

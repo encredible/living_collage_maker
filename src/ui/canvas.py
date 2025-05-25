@@ -403,6 +403,13 @@ class Canvas(QWidget):
                             "color_temp": item.color_temp,
                             "brightness": item.brightness,
                             "saturation": item.saturation
+                        },
+                        "number_label": {
+                            "value": item.number_label_value,
+                            "position": {
+                                "x": item.get_number_label_position().x(),
+                                "y": item.get_number_label_position().y()
+                            }
                         }
                     }
                     collage_data["furniture_items"].append(item_data)
@@ -529,6 +536,17 @@ class Canvas(QWidget):
                                     item.brightness, 
                                     item.saturation
                                 )
+                        
+                        # 번호표 설정 복원
+                        if "number_label" in item_data:
+                            number_label_data = item_data["number_label"]
+                            item.set_number_label(number_label_data.get("value", 0))
+                            if "position" in number_label_data:
+                                pos = QPoint(
+                                    number_label_data["position"]["x"],
+                                    number_label_data["position"]["y"]
+                                )
+                                item.set_number_label_position(pos)
                             
                         item.show()
                         self.furniture_items.append(item)
@@ -832,10 +850,9 @@ class Canvas(QWidget):
         return image
     
     def _draw_number_labels_on_image(self, painter):
-        """이미지 내보내기용 번호표를 그립니다. (CanvasArea의 로직과 동일)"""
+        """이미지 내보내기용 번호표를 그립니다. (가구 내부 번호표 위젯 위치 기준)"""
         # 번호표 설정
         label_size = 18  # 원형 라벨 크기
-        offset = 1       # 가구 영역에서 벗어날 거리
         
         for furniture_item in self.furniture_items:
             # 번호 확인
@@ -848,20 +865,20 @@ class Canvas(QWidget):
             # 가구 아이템의 위치와 크기
             item_rect = furniture_item.geometry()
             
-            # 번호표 위치 (가구 영역 밖 좌측 상단)
-            label_x = item_rect.left() - label_size - offset
-            label_y = item_rect.top() - label_size - offset
-            
-            # 캔버스 영역을 벗어나지 않도록 조정
-            if label_x < 0:
-                label_x = item_rect.left() + offset  # 가구 안쪽으로
-            if label_y < 0:
-                label_y = item_rect.top() + offset  # 가구 안쪽으로
+            # 번호표 위치 (가구 내부의 번호표 위젯 위치 사용)
+            if hasattr(furniture_item, 'number_label_widget'):
+                label_widget_pos = furniture_item.number_label_widget.pos()
+                label_x = item_rect.left() + label_widget_pos.x()
+                label_y = item_rect.top() + label_widget_pos.y()
+            else:
+                # 번호표 위젯이 없는 경우 기본 위치 (가구 내부 좌상단)
+                label_x = item_rect.left() + 5
+                label_y = item_rect.top() + 5
             
             label_rect = QRect(label_x, label_y, label_size, label_size)
             
-            # 원형 배경 그리기
-            painter.setPen(QPen(QColor("#ffffff"), 2))  # 흰색 테두리
+            # 원형 배경 그리기 (테두리 없음)
+            painter.setPen(Qt.PenStyle.NoPen)  # 테두리 제거
             painter.setBrush(QBrush(QColor("#444444")))  # 다크 그레이 배경
             painter.drawEllipse(label_rect)
             

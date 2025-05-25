@@ -13,6 +13,94 @@ from src.services.supabase_client import SupabaseClient
 from src.ui.utils import ImageAdjuster, ImageProcessor
 
 
+class NumberLabel(QWidget):
+    """드래그 가능한 번호표 위젯"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.number = 0
+        self.label_size = 18
+        self.setFixedSize(self.label_size, self.label_size)
+        self.setVisible(False)  # 기본적으로 숨김
+        
+        # 드래그 관련 속성
+        self.drag_start_pos = None
+        self.is_dragging = False
+        
+        # 기본 위치 (부모 위젯의 좌상단)
+        self.move(5, 5)
+        
+        # 부모 위젯 참조 유지
+        self.parent_widget = parent
+    
+    def set_number(self, number: int):
+        """번호를 설정하고 표시 여부를 결정합니다."""
+        self.number = number
+        if number > 0:
+            self.setVisible(True)
+        else:
+            self.setVisible(False)
+        self.update()
+    
+    def paintEvent(self, event):
+        """번호표를 그립니다."""
+        if self.number <= 0:
+            return
+            
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # 원형 배경 그리기 (테두리 없음)
+        painter.setPen(Qt.PenStyle.NoPen)  # 테두리 제거
+        painter.setBrush(QColor("#444444"))  # 다크 그레이 배경
+        painter.drawEllipse(self.rect())
+        
+        # 숫자 텍스트 그리기
+        painter.setPen(QPen(QColor("#ffffff")))  # 흰색 텍스트
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(8)
+        painter.setFont(font)
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, str(self.number))
+    
+    def mousePressEvent(self, event):
+        """마우스 프레스 이벤트 - 드래그 시작"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.drag_start_pos = event.pos()
+            self.is_dragging = True
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+    
+    def mouseMoveEvent(self, event):
+        """마우스 이동 이벤트 - 드래그 중"""
+        if self.is_dragging and self.drag_start_pos is not None:
+            # 새로운 위치 계산
+            delta = event.pos() - self.drag_start_pos
+            new_pos = self.pos() + delta
+            
+            # 부모 위젯 경계 내에서만 이동 가능
+            if self.parent():
+                parent_rect = self.parent().rect()
+                # 번호표가 부모 위젯을 벗어나지 않도록 제한
+                new_x = max(0, min(new_pos.x(), parent_rect.width() - self.width()))
+                new_y = max(0, min(new_pos.y(), parent_rect.height() - self.height()))
+                self.move(new_x, new_y)
+            
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+    
+    def mouseReleaseEvent(self, event):
+        """마우스 릴리즈 이벤트 - 드래그 종료"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.is_dragging = False
+            self.drag_start_pos = None
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+
 class ResizeHandle(Enum):
     """리사이즈 핸들 위치"""
     TOP_LEFT = 0      # 좌상단
@@ -107,6 +195,10 @@ class FurnitureItem(QWidget):
             self.setFixedSize(200,200)
         
         self.update_resize_handles() # 핸들 위치 업데이트
+        
+        # 번호표 위젯 생성 (이미지 로드 후)
+        self.number_label_widget = NumberLabel(self)
+        self.number_label_widget.show()  # 명시적으로 표시
     
     def update_resize_handles(self):
         """모든 리사이즈 핸들의 위치를 업데이트합니다."""
@@ -1272,14 +1364,34 @@ class FurnitureItem(QWidget):
     def set_number_label(self, number: int):
         """번호표에 표시할 숫자를 설정합니다."""
         self.number_label_value = number
-        # self.update()  # 위젯 다시 그리기 - 테스트 안정성을 위해 제거
+        if hasattr(self, 'number_label_widget'):
+            self.number_label_widget.set_number(number)
     
     def show_number_label_enabled(self, enabled: bool):
         """번호표 표시 여부를 설정합니다."""
         self.show_number_label = enabled
-        # self.update()  # 위젯 다시 그리기 - 테스트 안정성을 위해 제거
+        if hasattr(self, 'number_label_widget'):
+            if enabled and self.number_label_value > 0:
+                self.number_label_widget.setVisible(True)
+            else:
+                self.number_label_widget.setVisible(False)
     
     def get_number_label(self) -> int:
         """현재 번호표 값을 반환합니다."""
         return self.number_label_value
+    
+    def get_number_label_position(self) -> QPoint:
+        """번호표의 현재 위치를 반환합니다."""
+        if hasattr(self, 'number_label_widget'):
+            return self.number_label_widget.pos()
+        return QPoint(5, 5)  # 기본 위치
+    
+    def set_number_label_position(self, pos: QPoint):
+        """번호표의 위치를 설정합니다."""
+        if hasattr(self, 'number_label_widget'):
+            # 부모 위젯 경계 내에서만 이동 가능
+            parent_rect = self.rect()
+            new_x = max(0, min(pos.x(), parent_rect.width() - self.number_label_widget.width()))
+            new_y = max(0, min(pos.y(), parent_rect.height() - self.number_label_widget.height()))
+            self.number_label_widget.move(new_x, new_y)
 
