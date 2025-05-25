@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock, mock_open
 
 import pytest
 from PyQt6.QtCore import QMimeData, QPoint, Qt, QPointF, QEvent, QSize, QRect
-from PyQt6.QtGui import QDropEvent, QDragEnterEvent, QDragMoveEvent, QPixmap, QMouseEvent, QAction
+from PyQt6.QtGui import QDropEvent, QDragEnterEvent, QDragMoveEvent, QPixmap, QMouseEvent, QAction, QColor
 
 from src.models.furniture import Furniture
 from src.ui.canvas import Canvas, FurnitureItem
@@ -1451,20 +1451,21 @@ def test_canvas_z_order_send_to_back(qtbot, canvas_widget, mock_furniture_data_f
 @patch('src.ui.canvas.SupabaseClient')
 @patch('src.services.image_service.ImageService')
 def test_canvas_z_order_with_undo_redo(MockImageService, MockSupabaseClient, qtbot, canvas_widget, mock_furniture_data_for_canvas, mocker):
-    """z-order 변경이 Undo/Redo와 함께 작동하는지 테스트"""
+    """Z-order 변경과 Undo/Redo 기능 통합 테스트"""
     # Mock 설정
     mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance.get_furniture_image.return_value = b"fake_image_data"
+    
     mock_image_service_instance = MockImageService.return_value
-    mock_supabase_instance._image_cache = mocker.MagicMock()
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(QColor("blue"))
+    mock_image_service_instance.download_and_cache_image.return_value = dummy_pixmap
     
     # 두 개의 가구 아이템 생성
     furniture1_data = mock_furniture_data_for_canvas.copy()
     furniture1_data["id"] = "test-item-1"
     furniture2_data = mock_furniture_data_for_canvas.copy()
     furniture2_data["id"] = "test-item-2"
-    
-    # 가구 데이터베이스 조회 Mock 설정
-    mock_supabase_instance.get_furniture_list.return_value = [furniture1_data, furniture2_data]
     
     furniture1 = FurnitureItem(Furniture(**furniture1_data), parent=canvas_widget.canvas_area)
     furniture2 = FurnitureItem(Furniture(**furniture2_data), parent=canvas_widget.canvas_area)
@@ -1490,3 +1491,248 @@ def test_canvas_z_order_with_undo_redo(MockImageService, MockSupabaseClient, qtb
     assert len(canvas_widget.furniture_items) == 2
     restored_order_ids = [item.furniture.id for item in canvas_widget.furniture_items]
     assert restored_order_ids == ["test-item-1", "test-item-2"]
+
+
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
+def test_canvas_arrow_key_movement_single_item(MockImageService, MockSupabaseClient, qtbot, canvas_widget, mock_furniture_data_for_canvas, mocker):
+    """방향키로 단일 가구 아이템 이동 테스트"""
+    # Mock 설정
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance.get_furniture_image.return_value = b"fake_image_data"
+    
+    mock_image_service_instance = MockImageService.return_value
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(QColor("blue"))
+    mock_image_service_instance.download_and_cache_image.return_value = dummy_pixmap
+    
+    # 가구 아이템 생성
+    furniture_data = mock_furniture_data_for_canvas.copy()
+    furniture_data["id"] = "test-item-1"
+    furniture_item = FurnitureItem(Furniture(**furniture_data), parent=canvas_widget.canvas_area)
+    
+    # Canvas에 추가하고 선택
+    canvas_widget.furniture_items = [furniture_item]
+    canvas_widget.selected_items = [furniture_item]
+    furniture_item.is_selected = True
+    
+    # 초기 위치 설정
+    initial_x, initial_y = 100, 100
+    furniture_item.move(initial_x, initial_y)
+    
+    # 캔버스에 포커스 설정
+    canvas_widget.setFocus()
+    
+    # 오른쪽 방향키 테스트 (5픽셀 이동)
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Right)
+    assert furniture_item.x() == initial_x + 5
+    assert furniture_item.y() == initial_y
+    
+    # 아래쪽 방향키 테스트 (5픽셀 이동)
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Down)
+    assert furniture_item.x() == initial_x + 5
+    assert furniture_item.y() == initial_y + 5
+    
+    # 왼쪽 방향키 테스트 (5픽셀 이동)
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Left)
+    assert furniture_item.x() == initial_x
+    assert furniture_item.y() == initial_y + 5
+    
+    # 위쪽 방향키 테스트 (5픽셀 이동)
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Up)
+    assert furniture_item.x() == initial_x
+    assert furniture_item.y() == initial_y
+
+
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
+def test_canvas_arrow_key_movement_with_ctrl(MockImageService, MockSupabaseClient, qtbot, canvas_widget, mock_furniture_data_for_canvas, mocker):
+    """Ctrl + 방향키로 가구 아이템 정밀 이동 테스트"""
+    # Mock 설정
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance.get_furniture_image.return_value = b"fake_image_data"
+    
+    mock_image_service_instance = MockImageService.return_value
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(QColor("blue"))
+    mock_image_service_instance.download_and_cache_image.return_value = dummy_pixmap
+    
+    # 가구 아이템 생성
+    furniture_data = mock_furniture_data_for_canvas.copy()
+    furniture_data["id"] = "test-item-1"
+    furniture_item = FurnitureItem(Furniture(**furniture_data), parent=canvas_widget.canvas_area)
+    
+    # Canvas에 추가하고 선택
+    canvas_widget.furniture_items = [furniture_item]
+    canvas_widget.selected_items = [furniture_item]
+    furniture_item.is_selected = True
+    
+    # 초기 위치 설정
+    initial_x, initial_y = 100, 100
+    furniture_item.move(initial_x, initial_y)
+    
+    # 캔버스에 포커스 설정
+    canvas_widget.setFocus()
+    
+    # Ctrl + 오른쪽 방향키 테스트 (1픽셀 정밀 이동)
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Right, Qt.KeyboardModifier.ControlModifier)
+    assert furniture_item.x() == initial_x + 1
+    assert furniture_item.y() == initial_y
+    
+    # Ctrl + 아래쪽 방향키 테스트 (1픽셀 정밀 이동)
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Down, Qt.KeyboardModifier.ControlModifier)
+    assert furniture_item.x() == initial_x + 1
+    assert furniture_item.y() == initial_y + 1
+
+
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
+def test_canvas_arrow_key_movement_multiple_items(MockImageService, MockSupabaseClient, qtbot, canvas_widget, mock_furniture_data_for_canvas, mocker):
+    """방향키로 다중 선택된 가구 아이템들 동시 이동 테스트"""
+    # Mock 설정
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance.get_furniture_image.return_value = b"fake_image_data"
+    
+    mock_image_service_instance = MockImageService.return_value
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(QColor("blue"))
+    mock_image_service_instance.download_and_cache_image.return_value = dummy_pixmap
+    
+    # 두 개의 가구 아이템 생성
+    furniture1_data = mock_furniture_data_for_canvas.copy()
+    furniture1_data["id"] = "test-item-1"
+    furniture2_data = mock_furniture_data_for_canvas.copy()
+    furniture2_data["id"] = "test-item-2"
+    
+    furniture1 = FurnitureItem(Furniture(**furniture1_data), parent=canvas_widget.canvas_area)
+    furniture2 = FurnitureItem(Furniture(**furniture2_data), parent=canvas_widget.canvas_area)
+    
+    # Canvas에 추가하고 다중 선택
+    canvas_widget.furniture_items = [furniture1, furniture2]
+    canvas_widget.selected_items = [furniture1, furniture2]
+    furniture1.is_selected = True
+    furniture2.is_selected = True
+    
+    # 초기 위치 설정
+    furniture1.move(100, 100)
+    furniture2.move(200, 150)
+    
+    # 캔버스에 포커스 설정
+    canvas_widget.setFocus()
+    
+    # 오른쪽 방향키 테스트 - 두 아이템 모두 5픽셀씩 이동
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Right)
+    assert furniture1.x() == 105
+    assert furniture1.y() == 100
+    assert furniture2.x() == 205
+    assert furniture2.y() == 150
+
+
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
+def test_canvas_arrow_key_movement_boundary_check(MockImageService, MockSupabaseClient, qtbot, canvas_widget, mock_furniture_data_for_canvas, mocker):
+    """방향키 이동 시 캔버스 경계 체크 테스트"""
+    # Mock 설정
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance.get_furniture_image.return_value = b"fake_image_data"
+    
+    mock_image_service_instance = MockImageService.return_value
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(QColor("blue"))
+    mock_image_service_instance.download_and_cache_image.return_value = dummy_pixmap
+    
+    # 가구 아이템 생성
+    furniture_data = mock_furniture_data_for_canvas.copy()
+    furniture_data["id"] = "test-item-1"
+    furniture_item = FurnitureItem(Furniture(**furniture_data), parent=canvas_widget.canvas_area)
+    
+    # Canvas에 추가하고 선택
+    canvas_widget.furniture_items = [furniture_item]
+    canvas_widget.selected_items = [furniture_item]
+    furniture_item.is_selected = True
+    
+    # 캔버스 크기 설정
+    canvas_widget.canvas_area.resize(500, 400)
+    
+    # 왼쪽 상단 모서리에 위치 (0, 0)
+    furniture_item.move(0, 0)
+    
+    # 캔버스에 포커스 설정
+    canvas_widget.setFocus()
+    
+    # 왼쪽으로 이동 시도 - 경계를 벗어나지 않아야 함
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Left)
+    assert furniture_item.x() == 0  # 이동하지 않음
+    
+    # 위쪽으로 이동 시도 - 경계를 벗어나지 않아야 함
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Up)
+    assert furniture_item.y() == 0  # 이동하지 않음
+    
+    # 오른쪽 하단 모서리로 이동
+    max_x = canvas_widget.canvas_area.width() - furniture_item.width()
+    max_y = canvas_widget.canvas_area.height() - furniture_item.height()
+    furniture_item.move(max_x, max_y)
+    
+    # 오른쪽으로 이동 시도 - 경계를 벗어나지 않아야 함
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Right)
+    assert furniture_item.x() == max_x  # 이동하지 않음
+    
+    # 아래쪽으로 이동 시도 - 경계를 벗어나지 않아야 함
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Down)
+    assert furniture_item.y() == max_y  # 이동하지 않음
+
+
+def test_canvas_arrow_key_movement_no_selection(qtbot, canvas_widget, mock_furniture_data_for_canvas):
+    """선택된 아이템이 없을 때 방향키 이동 테스트"""
+    # 캔버스에 포커스 설정
+    canvas_widget.setFocus()
+    
+    # 선택된 아이템이 없는 상태에서 방향키 입력
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Right)
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Down)
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Left)
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Up)
+    
+    # 아무 일도 일어나지 않아야 함 (오류 없이 처리)
+    assert len(canvas_widget.selected_items) == 0
+    assert len(canvas_widget.furniture_items) == 0
+
+@patch('src.services.supabase_client.SupabaseClient')
+@patch('src.services.image_service.ImageService')
+def test_canvas_arrow_key_movement_with_cmd(MockImageService, MockSupabaseClient, qtbot, canvas_widget, mock_furniture_data_for_canvas, mocker):
+    """Cmd + 방향키로 가구 아이템 정밀 이동 테스트 (macOS)"""
+    # Mock 설정
+    mock_supabase_instance = MockSupabaseClient.return_value
+    mock_supabase_instance.get_furniture_image.return_value = b"fake_image_data"
+    
+    mock_image_service_instance = MockImageService.return_value
+    dummy_pixmap = QPixmap(100, 100)
+    dummy_pixmap.fill(QColor("blue"))
+    mock_image_service_instance.download_and_cache_image.return_value = dummy_pixmap
+    
+    # 가구 아이템 생성
+    furniture_data = mock_furniture_data_for_canvas.copy()
+    furniture_data["id"] = "test-item-1"
+    furniture_item = FurnitureItem(Furniture(**furniture_data), parent=canvas_widget.canvas_area)
+    
+    # Canvas에 추가하고 선택
+    canvas_widget.furniture_items = [furniture_item]
+    canvas_widget.selected_items = [furniture_item]
+    furniture_item.is_selected = True
+    
+    # 초기 위치 설정
+    initial_x, initial_y = 100, 100
+    furniture_item.move(initial_x, initial_y)
+    
+    # 캔버스에 포커스 설정
+    canvas_widget.setFocus()
+    
+    # Cmd + 오른쪽 방향키 테스트 (1픽셀 정밀 이동)
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Right, Qt.KeyboardModifier.MetaModifier)
+    assert furniture_item.x() == initial_x + 1
+    assert furniture_item.y() == initial_y
+    
+    # Cmd + 아래쪽 방향키 테스트 (1픽셀 정밀 이동)
+    qtbot.keyPress(canvas_widget, Qt.Key.Key_Down, Qt.KeyboardModifier.MetaModifier)
+    assert furniture_item.x() == initial_x + 1
+    assert furniture_item.y() == initial_y + 1

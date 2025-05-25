@@ -1253,6 +1253,10 @@ class Canvas(QWidget):
         elif event.key() == Qt.Key.Key_Escape:
             # 모든 선택 해제
             self.deselect_all_items()
+        elif event.key() in [Qt.Key.Key_Up, Qt.Key.Key_Down, Qt.Key.Key_Left, Qt.Key.Key_Right]:
+            # 방향키로 선택된 가구 이동
+            if self.selected_items:
+                self.move_selected_items_with_arrow_keys(event.key())
         else:
             super().keyPressEvent(event)
 
@@ -1295,5 +1299,68 @@ class Canvas(QWidget):
             self.update_number_labels()
             
             # Undo/Redo 액션 업데이트
+            self._save_state_and_update_actions()
+
+    def move_selected_items_with_arrow_keys(self, key):
+        """방향키로 선택된 가구 아이템들을 이동합니다."""
+        if not self.selected_items:
+            return
+        
+        # 이동 거리 설정 (Ctrl/Cmd 키를 누르면 정밀 이동)
+        modifiers = QGuiApplication.keyboardModifiers()
+        if modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier):
+            move_distance = 1   # Ctrl/Cmd + 방향키: 1픽셀씩 정밀 이동
+        else:
+            move_distance = 5   # 방향키만: 5픽셀씩 이동
+        
+        # 방향에 따른 이동 벡터 계산
+        delta_x = 0
+        delta_y = 0
+        
+        if key == Qt.Key.Key_Left:
+            delta_x = -move_distance
+        elif key == Qt.Key.Key_Right:
+            delta_x = move_distance
+        elif key == Qt.Key.Key_Up:
+            delta_y = -move_distance
+        elif key == Qt.Key.Key_Down:
+            delta_y = move_distance
+        
+        # 캔버스 경계 체크를 위한 준비
+        canvas_rect = self.canvas_area.rect()
+        
+        # 모든 선택된 아이템이 경계를 벗어나지 않는지 확인
+        valid_delta_x = delta_x
+        valid_delta_y = delta_y
+        
+        for item in self.selected_items:
+            new_x = item.x() + delta_x
+            new_y = item.y() + delta_y
+            
+            # 경계 체크 및 조정
+            if new_x < 0:
+                valid_delta_x = max(valid_delta_x, -item.x())
+            elif new_x + item.width() > canvas_rect.width():
+                valid_delta_x = min(valid_delta_x, canvas_rect.width() - item.x() - item.width())
+            
+            if new_y < 0:
+                valid_delta_y = max(valid_delta_y, -item.y())
+            elif new_y + item.height() > canvas_rect.height():
+                valid_delta_y = min(valid_delta_y, canvas_rect.height() - item.y() - item.height())
+        
+        # 실제로 이동할 거리가 있는 경우에만 이동
+        if valid_delta_x != 0 or valid_delta_y != 0:
+            # 상태 저장 (Undo/Redo용)
+            self._save_state()
+            
+            # 모든 선택된 아이템 이동
+            for item in self.selected_items:
+                new_pos = QPoint(item.x() + valid_delta_x, item.y() + valid_delta_y)
+                item.move(new_pos)
+            
+            # 캔버스 영역 업데이트 (번호표 위치 업데이트)
+            self.canvas_area.update()
+            
+            # 상태 저장 및 액션 업데이트
             self._save_state_and_update_actions()
 
