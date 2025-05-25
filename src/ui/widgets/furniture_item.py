@@ -99,6 +99,16 @@ class NumberLabel(QWidget):
             event.accept()
         else:
             super().mouseReleaseEvent(event)
+    
+    def deleteLater(self):
+        """NumberLabel 위젯 삭제 시 안전한 정리"""
+        try:
+            self.parent_widget = None
+            self.drag_start_pos = None
+        except Exception as e:
+            print(f"[NumberLabel] 정리 중 오류: {e}")
+        finally:
+            super().deleteLater()
 
 
 class ResizeHandle(Enum):
@@ -198,7 +208,7 @@ class FurnitureItem(QWidget):
         
         # 번호표 위젯 생성 (이미지 로드 후)
         self.number_label_widget = NumberLabel(self)
-        self.number_label_widget.show()  # 명시적으로 표시
+        # NumberLabel은 기본적으로 숨김 상태로 생성됨
     
     def update_resize_handles(self):
         """모든 리사이즈 핸들의 위치를 업데이트합니다."""
@@ -1269,6 +1279,16 @@ class FurnitureItem(QWidget):
     def deleteLater(self):
         """위젯이 삭제될 때 리소스를 정리하고 스레드를 안전하게 종료합니다."""
         try:
+            # 번호표 위젯 정리
+            if hasattr(self, 'number_label_widget') and self.number_label_widget:
+                try:
+                    self.number_label_widget.setParent(None)
+                    self.number_label_widget.deleteLater()
+                    self.number_label_widget = None
+                except RuntimeError:
+                    # 이미 삭제된 경우 무시
+                    pass
+            
             # 이미지 조정 다이얼로그가 열려있으면 닫기
             if hasattr(self, 'adjust_dialog') and self.adjust_dialog:
                 self.adjust_dialog.close()
@@ -1366,6 +1386,11 @@ class FurnitureItem(QWidget):
         self.number_label_value = number
         if hasattr(self, 'number_label_widget'):
             self.number_label_widget.set_number(number)
+            # show_number_label 속성도 확인하여 표시 여부 결정
+            if self.show_number_label and number > 0:
+                self.number_label_widget.setVisible(True)
+            else:
+                self.number_label_widget.setVisible(False)
     
     def show_number_label_enabled(self, enabled: bool):
         """번호표 표시 여부를 설정합니다."""
