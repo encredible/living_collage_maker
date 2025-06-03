@@ -198,6 +198,15 @@ class SelectedFurniturePanel(QWidget):
         self.sort_btn.clicked.connect(self.show_sort_menu)
         self.sort_btn.setStyleSheet(self.get_button_style())
         control_layout.addWidget(self.sort_btn)
+        
+        # 번호 표시 토글 버튼
+        self.toggle_number_btn = QPushButton("🔢 번호")
+        self.toggle_number_btn.setFixedSize(60, 25)
+        self.toggle_number_btn.setCheckable(True)  # 토글 가능하게 설정
+        self.toggle_number_btn.setChecked(True)   # 기본값은 번호 표시
+        self.toggle_number_btn.clicked.connect(self.toggle_number_labels)
+        self.toggle_number_btn.setStyleSheet(self.get_button_style())
+        control_layout.addWidget(self.toggle_number_btn)
 
         # 스페이서 추가
         control_layout.addStretch()
@@ -446,8 +455,8 @@ class SelectedFurniturePanel(QWidget):
     def update_furniture_list(self, furniture_items):
         """선택된 가구 목록을 업데이트합니다."""
         print(f"[선택된 가구 패널] 가구 목록 업데이트 시작, 아이템 수: {len(furniture_items)}")
-
-        # 기존 데이터 초기화
+        
+        # 이전 데이터 비우기
         self.selected_model.clear_furniture()
 
         # 가구별 개수 집계
@@ -480,20 +489,43 @@ class SelectedFurniturePanel(QWidget):
 
         print(f"[선택된 가구 패널] 가구 목록 업데이트 완료, 총 {len(furniture_count)}개 타입")
 
-    def update_canvas_number_labels(self):
-        """캔버스의 번호표를 업데이트합니다."""
-        # 부모 위젯들을 순회하여 캔버스를 찾습니다
+    def toggle_number_labels(self):
+        """가구 번호 표시를 토글합니다."""
+        # 버튼의 현재 상태 확인
+        show_numbers = self.toggle_number_btn.isChecked()
+        
+        # 캔버스를 찾아서 번호 표시 여부 설정
+        canvas = self._find_canvas()
+        if canvas:
+            # 캔버스의 모든 가구 아이템에 번호 표시 여부 설정
+            for item in canvas.furniture_items:
+                if hasattr(item, 'show_number_label_enabled'):
+                    item.show_number_label_enabled(show_numbers)
+            
+            # 번호표 업데이트
+            canvas.update_number_labels()
+            
+            print(f"[하단패널] 가구 번호 {'표시' if show_numbers else '숨김'} 설정")
+        else:
+            print("[하단패널] 캥버스를 찾을 수 없어 번호 표시 토글 실패")
+
+    def _find_canvas(self):
+        """부모 위젯들을 순회하여 캥버스를 찾습니다."""
         parent_widget = self.parent()
         while parent_widget:
             if hasattr(parent_widget, 'canvas'):
-                canvas = parent_widget.canvas
-                if hasattr(canvas, 'update_number_labels'):
-                    canvas.update_number_labels()
-                    print("[하단패널] 캔버스 번호표 업데이트 요청")
-                    return
+                return parent_widget.canvas
             parent_widget = parent_widget.parent()
-        
-        print("[하단패널] 캔버스를 찾을 수 없어 번호표 업데이트 실패")
+        return None
+
+    def update_canvas_number_labels(self):
+        """캥버스의 번호표를 업데이트합니다."""
+        canvas = self._find_canvas()
+        if canvas and hasattr(canvas, 'update_number_labels'):
+            canvas.update_number_labels()
+            print("[하단패널] 캥버스 번호표 업데이트 요청")
+        else:
+            print("[하단패널] 캥버스를 찾을 수 없어 번호표 업데이트 실패")
 
 
 class BottomPanel(QWidget):
